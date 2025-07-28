@@ -1,0 +1,28 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.eggs/
+
+# Virtual environment
+venv/
+.env/
+
+# Build output
+build/
+dist/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS-generated files
+.DS_Store
+
+# PyCharm / VSCode / Spyder
+.idea/
+.vscode/
+.spyproject/
+
+# test or temp files
+*.log
+*.tmp
