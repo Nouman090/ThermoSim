@@ -50,7 +50,7 @@ You can install the module directly from PyPI using `pip`:
 Once installed, you can start using the module by importing it into your Python script.
 
 ### **Example Usage**
-```pyrhon
+``` pyrhon
 import ThermoSim
 
 # Initialize the thermodynamic model
