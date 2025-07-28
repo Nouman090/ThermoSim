@@ -847,7 +847,7 @@ A geothermal Organic Rankine Cycle (ORC) system uses isobutane as the working fl
 * Turbine and pump work,
 * Efficiency of the cycle
 
-![Schematic Diagrame]([diagrame.png](https://github.com/Nouman090/ThermoSim/blob/main/docs/diagrame.png) "Schematic Diagrame of the ORC plant")
+![Schematic Diagrame](https://github.com/Nouman090/ThermoSim/blob/main/docs/diagrame.png)
 
 ## Solution:
 First, we will set the known parameters
