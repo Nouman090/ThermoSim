@@ -3,7 +3,7 @@
 
 ## **What is ThermoSim?**
 
-This Python module, **ThermoSim**, is designed to simulate and analyze various thermodynamic systems and components. It can model complex systems involving fluids such as water, air, and refrigerants like isobutane. The module supports a range of thermodynamic processes, including pumps, turbines, heat exchangers, and other essential components commonly found in energy systems, refrigeration cycles, and heat transfer applications.
+**ThermoSim**, is designed to simulate and analyze various thermodynamic systems and components. Object-Oriented Programming is used in this module. It can model complex systems involving fluids such as water, air, refrigerants like isobutane and so on. The module supports a range of thermodynamic processes, including pumps, turbines, heat exchangers,pipe,expansion valve and other essential components commonly found in energy systems, refrigeration cycles, and heat transfer applications.
 
 ### **Key Features:**
 
