@@ -1,0 +1,63 @@
+{
+    "fluids": {
+        "T66": {
+            "description": "Therminol 66 heat transfer fluid",
+            "reference": "Fitted from technical data",
+            "Tmin": -3,
+            "Tmax": 350,
+            "density": {
+                "type": "polynomial",
+                "coeffs": [
+                    -0.000299085201570605,
+                    -0.45471480813620496,
+                    1166.983784821442
+                ]
+            },
+            "specific_heat": {
+                "type": "polynomial",
+                "coeffs": [
+                    0.0009520878596311227,
+                    2.775555910639308,
+                    667.510532592174
+                ]
+            },
+            "conductivity": {
+                "type": "polynomial",
+                "coeffs": [
+                    -1.5668126154021082e-07,
+                    5.37272572160742e-05,
+                    0.11523302446446178
+                ]
+            },
+            "enthalpy": {
+                "type": "polynomial",
+                "coeffs": [
+                    0.00031736261987705747,
+                    1.3877779553196279,
+                    667.5105325921858,
+                    -287866.4898747549
+                ]
+            },
+            "inverse_enthalpy": {
+                "type": "polynomial",
+                "coeffs": [
+                    1.4344200279661041,
+                    -9.606236833989115,
+                    101.99840357064421,
+                    455.9525429682167
+                ]
+            },
+            "viscosity": {
+                "type": "exponential",
+                "coeffs": [
+                    1347.867289378573,
+                    -0.1371356317898373
+                ]
+            }
+        }
+    },
+    "h_normalization": {
+        "h_mean": 334619.11148017744,
+        "h_std": 217155.7095448896
+    }
+}
