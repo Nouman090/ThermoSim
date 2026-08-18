@@ -12,3 +12,4 @@ id_*
 *.key
 .env
 *.csv
+.vscode/
