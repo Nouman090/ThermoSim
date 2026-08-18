@@ -8,7 +8,7 @@ version = "3.2.3"
 description = "A Python package for thermodynamic cycle modelling and analysis"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 authors = [
     {name = "Md. Waheduzzaman Basunia Nouman", email = "md.waheduzzaman.nouman@gmail.com"},
 ]

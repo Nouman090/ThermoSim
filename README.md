@@ -1,3 +1,4 @@
+![tests](https://github.com/Nouman090/ThermoSim/actions/workflows/tests.yml/badge.svg)
 # ThermoSim
 
 ![ThermoSim logo](https://github.com/Nouman090/ThermoSim/blob/main/docs/ThermoSim%20Logo%202.jpg?raw=true)
