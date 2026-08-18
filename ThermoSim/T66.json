@@ -47,6 +47,12 @@
                     455.9525429682167
                 ]
             },
+            "entropy": {
+                "type": "cp_integral",
+                "T_ref": 273.15,
+                "s_ref": 0.0,
+                "note": "s(T) is the analytic integral of Cp(T)/T and is NOT a polynomial. For the quadratic Cp = a*T^2 + b*T + c used above: s(T) - s_ref = 0.5*a*(T^2 - T_ref^2) + b*(T - T_ref) + c*ln(T / T_ref). Coefficients are taken directly from the specific_heat block so the two can never drift apart. Temperatures are in KELVIN (note that Tmin/Tmax below are in degrees Celsius)."
+            },
             "viscosity": {
                 "type": "exponential",
                 "coeffs": [

@@ -13,9 +13,9 @@ import os
 # Make sure the project root is in the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from Thermosim import ThermodynamicModel
-from Thermosim.state import Prop
-from Thermosim import config
+from ThermoSim import ThermodynamicModel
+from ThermoSim.state import Prop
+from ThermoSim import config
 
 
 class TestPropCreation:

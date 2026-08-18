@@ -7,10 +7,10 @@ Run with:   python example_sensitivity.py
 """
 
 import numpy as np
-from Thermosim import (
+from ThermoSim import (
     ThermodynamicModel, Turbine, Pump, HeatExchanger,
 )
-from Thermosim.analysis import SensitivityAnalyzer
+from ThermoSim.analysis import SensitivityAnalyzer
 
 
 # ── Step 1: Define a BUILD FUNCTION ──────────────────────────

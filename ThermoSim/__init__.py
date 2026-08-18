@@ -1,18 +1,19 @@
 """
-thermocycle  —  A Python package for thermodynamic cycle modelling.
+ThermoSim  —  A Python package for thermodynamic cycle modelling.
 
 Usage
 -----
-    from thermocycle import (
+    from ThermoSim import (
         ThermodynamicModel,
         Turbine, Pump, Compressor,
         HeatExchanger, TES,
         Mixer, Splitter, Separator,
         Source, Sink, Pipe, Expansion_valve,
     )
-    from thermocycle.plotting import CyclePlotter
-    from thermocycle.analysis import SensitivityAnalyzer
+    from ThermoSim.plotting import CyclePlotter
+    from ThermoSim.analysis import SensitivityAnalyzer
 """
+__version__ = "3.2.3"
 
 from .model import ThermodynamicModel
 from .state import Prop

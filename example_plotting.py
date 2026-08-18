@@ -6,10 +6,10 @@ Demonstrates all plotting features.
 Run with:   python example_plotting.py
 """
 
-from Thermosim import (
+from ThermoSim import (
     ThermodynamicModel, Turbine, Pump, HeatExchanger,
 )
-from Thermosim.plotting import CyclePlotter
+from ThermoSim.plotting import CyclePlotter
 
 # ── Build a simple Rankine cycle ──────────────────────────────
 M = ThermodynamicModel()

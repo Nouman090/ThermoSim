@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ThermoSim"
+version = "3.2.3"
+description = "A Python package for thermodynamic cycle modelling and analysis"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Md. Waheduzzaman Basunia Nouman", email = "md.waheduzzaman.nouman@gmail.com"},
+]
+keywords = ["thermodynamics", "rankine", "brayton", "ORC", "exergy", "CoolProp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "CoolProp",
+    "scipy",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "tabulate",
+]
+
+[project.optional-dependencies]
+optimization = ["pymoo"]
+test = ["pytest"]
+all = ["pymoo", "pytest"]
+
+[project.urls]
+Homepage = "https://github.com/Nouman090/ThermoSim"
+Repository = "https://github.com/Nouman090/ThermoSim"
+Issues = "https://github.com/Nouman090/ThermoSim/issues"
+Changelog = "https://github.com/Nouman090/ThermoSim/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["ThermoSim*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+ThermoSim = ["*.json"]

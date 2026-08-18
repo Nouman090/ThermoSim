@@ -4,7 +4,7 @@ main.py
 Regenerative Rankine cycle with open feedwater heater.
 """
 
-from Thermosim import (
+from ThermoSim import (
     ThermodynamicModel,
     Turbine, Pump, Splitter, Mixer, HeatExchanger,
 )
