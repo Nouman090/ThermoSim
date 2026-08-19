@@ -1,3 +1,4 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22016326.svg)](https://doi.org/10.5281/zenodo.22016326)
 ![tests](https://github.com/Nouman090/ThermoSim/actions/workflows/tests.yml/badge.svg)
 # ThermoSim
 
