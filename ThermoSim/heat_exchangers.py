@@ -223,7 +223,8 @@ class HeatExchanger(Component):
                  Hot_In_state, Hot_Out_state,
                  Cold_In_state, Cold_Out_state,
                  UA=None, effectiveness=None, Q=None,
-                 div_N=200, PPT_graph=False, Calculate=False,print_residual = False):
+                 div_N=200, PPT_graph=False, Calculate=False,
+                 print_residual=False, strict_pinch=False):
 
         self.HeatAdded      = HeatAdded
         self.Hot_In_state   = Hot_In_state
@@ -239,6 +240,9 @@ class HeatExchanger(Component):
         self.Q              = Q
         self.UA             = UA
         self.effectiveness  = effectiveness
+        # Raise rather than warn when the internal pinch is violated.
+        self.strict_pinch   = strict_pinch
+        self.min_dT         = None
         self.Hot_Mass_flowrate  = None
         self.Cold_Mass_flowrate = None
         self.print_residual = print_residual
@@ -425,6 +429,78 @@ class HeatExchanger(Component):
         return min_dT - self.PPT
 
     # ── pinch check helpers ───────────────────────────────────────────────────
+
+    def _check_PPT_profile(self, warn_only=True):
+        """
+        Verify the pinch along the WHOLE exchanger, not only at its ends.
+
+        ``_check_PPT_ends`` compares the two terminal temperature
+        differences.  That is sufficient for a monotonic single-phase
+        exchanger, but not when either stream changes phase: the closest
+        approach then sits *inside* the unit, typically where a boiling
+        stream reaches saturation, and both ends can be comfortably clear
+        while the profiles cross in the middle.
+
+        This matters because the pinch constraint only binds when it is
+        doing work.  With two or three unknowns the solver drives
+        min(dT) - PPT to zero, so the constraint is satisfied by
+        construction.  With zero or one unknown the energy balance closes
+        the problem on its own and PPT never enters the calculation -- the
+        exchanger will report a converged solution whatever the profile
+        does.
+
+        A combined-cycle HRSG built that way returned 53.87 % thermal
+        efficiency with every component solved and a minimum approach of
+        -12.9 K: the profiles crossed, and the design was impossible.  It
+        also scored *higher* than the feasible alternative (51.98 % at
+        +15.9 K), because relaxing a constraint that is not enforced always
+        improves the objective.  In a parameter sweep the infeasible design
+        is therefore selected preferentially, which is the worst possible
+        failure mode.
+
+        Default is to warn rather than raise, since a violated pinch is a
+        statement about the design rather than an error in the input, and a
+        user sweeping a parameter range may legitimately want the
+        infeasible points reported rather than fatal.  Pass
+        ``strict_pinch=True`` to the constructor to raise instead.
+        """
+        if self.HEX_type == 'SimpleHEX':
+            return None
+        for pt in (self.Hot_In, self.Hot_Out, self.Cold_In, self.Cold_Out):
+            if pt is None or pt.H is None:
+                return None
+        mh, mc = self.Hot_Mass_flowrate, self.Cold_Mass_flowrate
+        if not mh or not mc:
+            return None
+
+        try:
+            dP_h = self.Hot_In.P - self.Hot_Out.P
+            dP_c = self.Cold_In.P - self.Cold_Out.P
+            Q = mh * (self.Hot_In.H - self.Hot_Out.H)
+            _, _, _, min_dT = self._build_profile(
+                Q, dP_h, dP_c,
+                self.Hot_Out.H, self.Cold_In.H,
+                self.Hot_Out.P, self.Cold_In.P,
+                mh, mc, direction='cold_to_hot')
+        except Exception:
+            return None                      # never fail the solve on a check
+
+        self.min_dT = float(min_dT)
+        tol = max(1e-2, 1e-3 * self.PPT)
+        if min_dT <= self.PPT - tol:
+            crossed = min_dT < 0
+            msg = (
+                f"[{self.ID}] pinch violation inside the exchanger: "
+                f"minimum approach {min_dT:.3f} K < PPT {self.PPT:.3f} K"
+                + (" -- the temperature profiles CROSS, so this design is "
+                   "not physically realisable." if crossed else
+                   " -- the closest approach is inside the unit, not at "
+                   "either end.")
+            )
+            if getattr(self, 'strict_pinch', False):
+                raise ValueError(msg)
+            warnings.warn(msg, UserWarning, stacklevel=3)
+        return self.min_dT
 
     def _check_PPT_ends(self):
         """Verify PPT is not violated at either end after solving."""
@@ -1204,6 +1280,7 @@ class HeatExchanger(Component):
             self._check_energy_balance()
             self._check_PPT_ends()
             self._compute_outputs(dP_h, dP_c)
+            self._check_PPT_profile()
             self._compute_exergy_destruction()
         except Exception:
             self._restore(snap)

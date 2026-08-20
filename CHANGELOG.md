@@ -1,6 +1,130 @@
 
 # Changelog
+## [3.2.4] - 2026-08-20
 
+### Added
+- **Full-profile pinch validation.** `HeatExchanger` now checks the minimum
+  approach along the whole exchanger after every solve, not only at the two
+  ends, and reports a violation with `min_dT` stored on the component.
+
+  The previous check compared only the terminal temperature differences.
+  That is sufficient for a monotonic single-phase exchanger, but when
+  either stream changes phase the closest approach sits *inside* the unit —
+  typically where a boiling stream reaches saturation — and both ends can
+  be comfortably clear while the profiles cross in the middle.
+
+  The underlying asymmetry was that the pinch constraint only binds where
+  it is doing work. With two or three unknowns the solver drives
+  `min(dT) - PPT` to zero, so the constraint holds by construction. With
+  zero or one unknown the energy balance closes the problem on its own and
+  `PPT` never enters the calculation, so the exchanger reported convergence
+  whatever the profile did.
+
+  A combined-cycle HRSG built that way returned 53.87 % thermal efficiency
+  with every component solved and a minimum approach of **-12.9 K**: the
+  temperature profiles crossed and the design was not realisable. It also
+  scored higher than the feasible alternative (51.98 % at +15.9 K), because
+  relaxing a constraint that is not enforced always improves the objective.
+  In a parameter sweep the infeasible design is therefore selected
+  preferentially.
+
+- `strict_pinch` argument on `HeatExchanger` (default `False`). A violated
+  pinch warns by default, since an infeasible point in a sweep is a
+  statement about the design rather than an error in the input. Set `True`
+  to raise instead.
+- `min_dT` attribute on `HeatExchanger`, so the pinch can be tested
+  programmatically rather than read off a plot.
+
+## [3.2.3] - 2026-08-18
+
+### Added
+- **Gas working fluids in pinch-constrained heat exchangers.** Bracket
+  bounds now respect the melting line `Tmelt(p)` obtained from
+  `AbstractState.melting_line()`, rather than `PropsSI('TMIN', fluid)`
+  alone.
+
+  `TMIN` is a single number, but the melting line varies with pressure and
+  can rise above it — for air, 59.75 K against 59.93 K at 10 bar — at which
+  point CoolProp refuses the evaluation. Every two- and three-unknown pinch
+  problem therefore failed for `Air`, `Nitrogen`, `CO2` and `Oxygen`, i.e.
+  for every gas-turbine, HRSG and recuperator model. Water is the opposite
+  case: its melting line falls with pressure, so taking the maximum of the
+  two handles both directions. Fluids without a fitted melting line, and
+  CO2 below its triple-point pressure, fall back to `TMIN`.
+
+- `Condition` column and `condition` argument on `Model.Point_print()`.
+  Since `Q` became strictly numeric in 3.2.2, single-phase rows showed a
+  bare `NaN`; `Condition` carries the readable label without putting a
+  string back into a numeric column. The full label, with its margin from
+  saturation, remains in `phase`.
+
+- **Real process paths in cycle diagrams.** `plot_Ts_diagram`,
+  `plot_Ph_diagram` and `plot_hs_diagram` gained `process_path=True`
+  (default) and `path_N=60`. Isobaric segments now show their saturation
+  crossings, so boiler and condenser legs render as sub-cooled → saturated
+  liquid → saturated vapour → superheated with sharp kinks and a flat
+  two-phase section; throttling stays isenthalpic; and expansion or
+  compression follows a constant-efficiency condition line.
+
+  Interpolating `(P, H)` linearly across a turbine makes entropy *fall*
+  mid-expansion (6.661 → 6.090 → 7.265 kJ/kg·K), which no adiabatic machine
+  does; the condition line gives a monotonic 6.661 → 6.709 → 7.265. The
+  efficiency is derived from the two endpoints rather than read from
+  `n_isen`, so the path stays correct when the outlet state was supplied
+  directly. Segments that cannot be traced fall back to a straight line
+  silently; `process_path=False` restores the previous polygon.
+
+- Validation suite in `validation/`, covering nine worked examples from
+  Moran & Shapiro 5th ed. (SI) and the Chena Hot Springs geothermal ORC.
+- Continuous integration on GitHub Actions across Python 3.9–3.13.
+- `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
+
+### Changed
+- **Effectiveness uses the rigorous enthalpy-based definition.**
+  `Q_max = min[mh(h_hi - h_h(T_ci)), mc(h_c(T_hi) - h_ci)]`, of which the
+  familiar `Cmin·dT` form is the constant-`cp` simplification. For air
+  between 453 K and 1138 K — the span of a typical regenerator — `cp` rises
+  about 19 %, and that assumption cost 6.4 kJ/kg on the regenerator cold
+  outlet of Moran Example 9.11, moving the cycle efficiency deviation from
+  0.85 % to 0.09 %. The enthalpy form was already used for two-phase
+  inlets, so this also removes an internal inconsistency.
+
+- **Root-finding brackets floored at the counter-flow limit.** No state in
+  a counter-flow exchanger is colder than the cold inlet, so the bracket
+  need not reach the fluid's absolute validity floor. With the tighter
+  bracket `brentq` converges directly instead of falling back to
+  differential evolution: **62× faster** on gas cases (252 s → 4.1 s), with
+  identical duties and a slightly more accurate pinch.
+
+- The `PPT` end-check tolerance is now relative, `max(1e-2, 1e-3·PPT)`. The
+  pinch is located by a root-finder with a relative tolerance, so a fixed
+  absolute allowance rejected good solutions on large pinches — a 30 K
+  target converging to 29.986 K is 0.05 % out, i.e. numerical noise, yet
+  was reported as a physical violation.
+
+- `requires-python` raised to `>=3.9`, with per-version classifiers, to
+  match what is actually tested.
+- `setup.py` removed; `pyproject.toml` is the single source of truth. The
+  two had drifted to different version strings.
+
+### Fixed
+- `ThermodynamicModel.add_point()` now returns the created `Prop`. It
+  registered the point but returned `None`, so the documented
+  `inlet = Model.add_point(...)` capture pattern raised `AttributeError`.
+- `Pipe` distinguishes an explicitly lossless line from an unspecified one.
+  `Pressure_drop` and `Temperature_drop` default to `None` and are tested
+  with `is not None`; they previously defaulted to `0` and were tested with
+  `!= 0`, so `Pipe(..., Pressure_drop=0)` raised
+  `Need at least 2 of (P_in, P_out, Pressure_drop)`.
+- `Turbine`, `Pump` and `Compressor` raise on a mass-flow mismatch between
+  their ports, via the shared `_resolve_mass_flowrate` helper. Previously
+  the mismatch was silent: work was computed from the inlet and the outlet
+  left unchanged.
+- Defaulted mass flows are no longer propagated into the model. The 1 kg/s
+  fallback is a guess, and writing it to a shared state point caused a
+  later component that resolved the real rate to see a spurious mismatch.
+- A lower enthalpy bound subtracted its margin instead of adding it,
+  placing the bound below the valid region.
 ## [3.2.2] - 2026-08-07
 
 ### Fixed — packaging
