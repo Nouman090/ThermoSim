@@ -1,5 +1,35 @@
 
 # Changelog
+## [3.2.5] - 2026-08-27
+
+### Fixed
+- **The discretised pinch no longer depends on `div_N`.** `_build_profile`
+  (used by both the solver's pinch constraint and `plot_hex_profile`) marched
+  the exchanger in `div_N` equal-enthalpy steps. For a phase-changing stream
+  the true pinch sits exactly at a saturation crossing — onset of boiling,
+  superheating, condensation or subcooling — and a uniform grid only landed
+  on it by chance. The reported minimum approach converged from above as
+  `div_N` increased instead of being exact at any resolution (documented as
+  a known limitation in 3.2.4, see [Troubleshooting](https://github.com/Nouman090/ThermoSim/wiki/Troubleshooting)).
+
+  ThermoSim now computes the exact enthalpy of every such crossing on both
+  streams (via CoolProp's saturated-liquid/-vapour enthalpy at the stream's
+  pressure) and inserts it into the profile in addition to the uniform
+  `div_N` grid, so the reported pinch is exact at `div_N=10` and `div_N=5000`
+  alike. Verified on a water/water double-pipe exchanger where the hot
+  stream condenses across the unit: `min_dT` was resolution-dependent before
+  the fix (20.000 K at `div_N=10` drifting toward 19.028 K by `div_N=5000`,
+  never settling) and is now exactly 19.024401 K at every `div_N` tested,
+  10 through 5000.
+
+  This changes solved results for exchangers where a stream crosses its
+  saturation dome and the pinch constraint resolves an unknown (mass flow,
+  enthalpy). The worked example in [Heat Exchanger](https://github.com/Nouman090/ThermoSim/wiki/Heat-Exchanger)
+  moves `mc` from 13.521 to 13.553 kg/s; `Q` is unaffected there because it
+  comes directly from the fully-specified hot side, not from the pinch.
+  Fluids with no two-phase envelope at the operating pressure (incompressible
+  fluids, supercritical pressure) are unaffected.
+
 ## [3.2.4] - 2026-08-20
 
 ### Added

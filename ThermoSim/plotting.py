@@ -7,8 +7,8 @@ Usage:
     from ThermoSim.plotting import CyclePlotter
     plotter = CyclePlotter(Model)
     plotter.plot_Ts_diagram(['1','2','3','4','1'], save_csv=True, csv_path='Ts_data.csv')
-    plotter.plot_Ph_diagram(['1','2','3','4','1'], save_csv=True)
-    plotter.plot_hex_profile(Model.Component['HEX1'], save_csv=True)
+    plotter.plot_Ph_diagram(['1','2','3','4','1'], save_csv=True,csv_path='Ts_data.csv')
+    plotter.plot_hex_profile(Model.Component['HEX1'], save_csv=True,csv_path='Ts_data.csv')
     plotter.plot_exergy_bar(save_csv=True)
 """
 
@@ -20,6 +20,8 @@ import pandas as pd
 import os
 from datetime import datetime
 from dataclasses import dataclass
+
+from .heat_exchangers import _phase_boundary_alphas
 
 
 @dataclass
@@ -799,7 +801,11 @@ class CyclePlotter:
         hex_id : str
             The ID of the HeatExchanger component in the model.
         div_N : int
-            Number of discretisation segments.
+            Number of discretisation segments. Exact phase-boundary
+            crossings (onset of boiling / superheating / condensation /
+            subcooling) are always added on top of this grid, so the
+            reported pinch does not depend on div_N landing near one by
+            chance.
         figsize : tuple
             Figure size.
         save_csv : bool
@@ -816,7 +822,7 @@ class CyclePlotter:
             hx = self.model.Component[hex_id]
         except KeyError:
             raise ValueError(f"Component '{hex_id}' not found in model")
-        
+
         if not hx.Solution_Status:
             raise ValueError(f"{hex_id} has not been solved yet.")
 
@@ -842,37 +848,55 @@ class CyclePlotter:
                 f"(hot={hx.Hot_Mass_flowrate}, cold={hx.Cold_Mass_flowrate})."
             )
 
-        q = Q_total / div_N
         dP_h = hx.Hot_In.P - hx.Hot_Out.P
         dP_c = hx.Cold_In.P - hx.Cold_Out.P
 
-        Th = np.zeros(div_N + 1)
-        Tc = np.zeros(div_N + 1)
-        Q_axis = np.linspace(0, Q_total / 1e3, div_N + 1)
+        # Uniform div_N grid plus the exact enthalpy of every phase-boundary
+        # crossing (onset of boiling / superheating / condensation /
+        # subcooling) on either stream. Without these, a phase-changing
+        # stream's true pinch — which sits exactly at a saturation crossing —
+        # is only sampled by chance, so the plotted/exported minimum ΔT would
+        # depend on div_N. See ThermoSim.heat_exchangers._build_profile.
+        H_h_end = hx.Hot_Out.H + Q_total / hx.Hot_Mass_flowrate
+        H_c_end = hx.Cold_In.H + Q_total / hx.Cold_Mass_flowrate
+        alphas = np.linspace(0.0, 1.0, div_N + 1)
+        breakpoints = (
+            _phase_boundary_alphas(hx.Hot_In.fluid,  hx.Hot_Out.P,
+                                    hx.Hot_Out.H, H_h_end) +
+            _phase_boundary_alphas(hx.Cold_In.fluid, hx.Cold_In.P,
+                                    hx.Cold_In.H, H_c_end)
+        )
+        if breakpoints:
+            alphas = np.unique(np.concatenate([alphas, breakpoints]))
+
+        n_pts = alphas.size
+        Th = np.zeros(n_pts)
+        Tc = np.zeros(n_pts)
+        Q_axis = alphas * (Q_total / 1e3)
 
         csv_data = []
 
-        for n in range(div_N + 1):
-            hh = hx.Hot_Out.H + q * n / hx.Hot_Mass_flowrate
-            hc = hx.Cold_In.H + q * n / hx.Cold_Mass_flowrate
-            Ph = hx.Hot_Out.P + (dP_h / div_N) * n
-            Pc = hx.Cold_In.P - (dP_c / div_N) * n
+        for i, alpha in enumerate(alphas):
+            hh = hx.Hot_Out.H + alpha * Q_total / hx.Hot_Mass_flowrate
+            hc = hx.Cold_In.H + alpha * Q_total / hx.Cold_Mass_flowrate
+            Ph = hx.Hot_Out.P + dP_h * alpha
+            Pc = hx.Cold_In.P - dP_c * alpha
 
             T_hot = self.model.Prop(
                 hx.Hot_In.fluid, StatePointName='_plot_h',
                 H=hh, P=Ph
             ).T - 273.15
-            
+
             T_cold = self.model.Prop(
                 hx.Cold_In.fluid, StatePointName='_plot_c',
                 H=hc, P=Pc
             ).T - 273.15
-            
-            Th[n] = T_hot
-            Tc[n] = T_cold
-            
+
+            Th[i] = T_hot
+            Tc[i] = T_cold
+
             csv_data.append({
-                'Heat_Transferred_kW': Q_axis[n],
+                'Heat_Transferred_kW': Q_axis[i],
                 'Hot_Temperature_C': T_hot,
                 'Cold_Temperature_C': T_cold,
                 'Delta_T_K': T_hot - T_cold,

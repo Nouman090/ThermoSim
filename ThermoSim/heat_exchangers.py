@@ -172,6 +172,41 @@ def _T_sat(model, fluid, P, Q_val):
     return model.Prop(fluid, StatePointName='_sat', P=P, Q=Q_val).T
 
 
+def _phase_boundary_alphas(fluid, P_ref, H_start, H_end):
+    """
+    Fractional positions in (0, 1) where a stream crosses saturated liquid
+    (bubble point, Q=0) or saturated vapour (dew point, Q=1) at P_ref,
+    assuming its enthalpy varies linearly from H_start (alpha=0) to H_end
+    (alpha=1).
+
+    These are the exact onset points of boiling / superheating (H rising
+    through the dome) or condensation / subcooling (H falling through it).
+    A phase-changing stream's true pinch sits at one of these crossings;
+    a uniform div_N grid only lands on it by chance, which is why the
+    reported minimum approach used to depend on div_N. Pinning the
+    crossing in directly removes that dependence.
+
+    Returns [] for fluids/pressures with no two-phase envelope at P_ref
+    (incompressible fluids, supercritical pressure) or when neither
+    boundary lies strictly inside [H_start, H_end].
+    """
+    span = H_end - H_start
+    if abs(span) < 1e-9:
+        return []
+    try:
+        H_liq = CP.PropsSI('H', 'P', P_ref, 'Q', 0, fluid)
+        H_vap = CP.PropsSI('H', 'P', P_ref, 'Q', 1, fluid)
+    except Exception:
+        return []          # incompressible fluid or supercritical pressure
+
+    alphas = []
+    for H_sat in (H_liq, H_vap):
+        a = (H_sat - H_start) / span
+        if 0.0 < a < 1.0:
+            alphas.append(a)
+    return alphas
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  HeatExchanger
 # ─────────────────────────────────────────────────────────────────────────────
@@ -193,7 +228,12 @@ class HeatExchanger(Component):
     UA             : optional overall conductance [W/K]
     effectiveness  : optional NTU-ε value (0-1)
     Q              : optional heat duty [W]
-    div_N          : number of segments for pinch profile (default 200)
+    div_N          : number of segments for pinch profile (default 200).
+                     Phase-boundary crossings (onset of boiling /
+                     superheating / condensation / subcooling) are always
+                     inserted as extra points on top of this grid, so the
+                     reported pinch does not depend on div_N landing near
+                     one by chance.
     PPT_graph      : if True, display pinch temperature profile plot
     Calculate      : if True, call Cal() immediately on construction
     """
@@ -372,45 +412,53 @@ class HeatExchanger(Component):
         exclude_idx : if set, the residual skips that index when computing min(ΔT).
                       Used in 3-unknown solver to avoid the anchored pinch point.
 
-        Returns Th, Tc, dT arrays of length N+1.
-        """
-        N  = self.div_N
-        q  = Q_total / N
-        Th = np.zeros(N + 1)
-        Tc = np.zeros(N + 1)
-        dT = np.zeros(N + 1)
+        The march is uniform in enthalpy (div_N equal steps) PLUS the exact
+        enthalpy of every phase-boundary crossing on either stream (onset of
+        boiling / superheating / condensation / subcooling), inserted via
+        ``_phase_boundary_alphas``. That is what makes the reported pinch
+        independent of div_N for a phase-changing stream: the closest
+        approach for such a stream sits exactly at one of these crossings,
+        not somewhere a uniform grid happens to land.
 
-        Th[0] = self.Model.Prop(self.Hot_In.fluid,  StatePointName='_h0',
-                                H=H_h0, P=P_h0).T
-        Tc[0] = self.Model.Prop(self.Cold_In.fluid, StatePointName='_c0',
-                                H=H_c0, P=P_c0).T
-        dT[0] = Th[0] - Tc[0]
-        
-        for n in range(1, N + 1):
-            if direction == 'cold_to_hot':
-                H_h = H_h0 + q * n / mh
-                H_c = H_c0 + q * n / mc
-                Ph  = P_h0 + dP_h * n / N
-                Pc  = P_c0 - dP_c * n / N
-            else:   # direction == 'hot_to_cold'
-                H_h = H_h0 - q * n / mh
-                H_c = H_c0 - q * n / mc
-                Ph  = P_h0 - dP_h * n / N
-                Pc  = P_c0 + dP_c * n / N
-            
-            Th[n] = self.Model.Prop(self.Hot_In.fluid,  StatePointName='_h',
-                                    H=H_h, P=Ph).T
-            Tc[n] = self.Model.Prop(self.Cold_In.fluid, StatePointName='_c',
-                                    H=H_c, P=Pc).T
-            dT[n] = Th[n] - Tc[n]
+        Returns Th, Tc, dT arrays of length N+1 plus up to 4 extra
+        phase-boundary points (sorted by position, hot-outlet/cold-inlet end
+        first).
+        """
+        N    = self.div_N
+        sign = 1.0 if direction == 'cold_to_hot' else -1.0
+
+        H_h_end = H_h0 + sign * Q_total / mh
+        H_c_end = H_c0 + sign * Q_total / mc
+
+        alphas = np.linspace(0.0, 1.0, N + 1)
+        breakpoints = (
+            _phase_boundary_alphas(self.Hot_In.fluid,  P_h0, H_h0, H_h_end) +
+            _phase_boundary_alphas(self.Cold_In.fluid, P_c0, H_c0, H_c_end)
+        )
+        if breakpoints:
+            alphas = np.unique(np.concatenate([alphas, breakpoints]))
+
+        H_h = H_h0 + sign * alphas * (Q_total / mh)
+        H_c = H_c0 + sign * alphas * (Q_total / mc)
+        Ph  = P_h0 + sign * alphas * dP_h
+        Pc  = P_c0 - sign * alphas * dP_c
+
+        Th = np.empty(alphas.shape)
+        Tc = np.empty(alphas.shape)
+        for i in range(alphas.size):
+            Th[i] = self.Model.Prop(self.Hot_In.fluid,  StatePointName='_h',
+                                    H=H_h[i], P=Ph[i]).T
+            Tc[i] = self.Model.Prop(self.Cold_In.fluid, StatePointName='_c',
+                                    H=H_c[i], P=Pc[i]).T
+        dT = Th - Tc
 
         if exclude_idx is not None:
-            mask = np.ones(N + 1, dtype=bool)
+            mask = np.ones(alphas.shape, dtype=bool)
             if (exclude_idx == 0 and direction == 'cold_to_hot') or (exclude_idx != 0 and direction == 'hot_to_cold'):
-                mask[0:int(N*0.1)] = False
+                mask[alphas < 0.1] = False
             elif (exclude_idx != 0 and direction == 'cold_to_hot') or (exclude_idx == 0 and direction == 'hot_to_cold'):
-                mask[int(N*0.9):] = False   # slice to the END: index N is the hot-inlet
-                #                     anchor point and must be excluded too
+                mask[alphas >= 0.9] = False   # up to the hot-inlet
+                #                     anchor point, which must be excluded too
             return Th, Tc, dT, np.min(dT[mask])
 
         return Th, Tc, dT, np.min(dT)
