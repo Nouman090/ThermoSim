@@ -286,6 +286,15 @@ class HeatExchanger(Component):
         self.Hot_Mass_flowrate  = None
         self.Cold_Mass_flowrate = None
         self.print_residual = print_residual
+        # Cal() fetches these from Model.Point on every call; initialise them
+        # here so _identify_unknowns() (and anything else inspecting the HEX
+        # before it has ever been solved) sees "everything unknown" rather
+        # than raising AttributeError on an instance attribute that doesn't
+        # exist yet.
+        self.Hot_In  = None
+        self.Hot_Out = None
+        self.Cold_In  = None
+        self.Cold_Out = None
 
         if HeatAdded not in (True, False, None):
             raise ValueError(

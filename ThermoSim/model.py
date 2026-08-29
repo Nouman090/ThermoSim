@@ -79,31 +79,29 @@ class ThermodynamicModel:
     # ---------------------------------------------------------- #
     #  iterative solver
     # ---------------------------------------------------------- #
-    def _sorted_components(self):
+    def _priority_buckets(self):
         """
-        Return the component dict items in the prescribed solve order:
+        Split registered components into the priority groups shared by the
+        default staged solve order and the flat fallback order:
 
-        Priority 1 – single-stream pass-through components
-                     (Turbine, Pump, Compressor, Pipe, Expansion_valve)
-        Priority 2 – flow-splitting / mixing components
-                     (Splitter, Separator, Mixer)
-        Priority 3a – SimpleHEX heat exchangers   (solved first among HEXs)
-        Priority 3b – other HeatExchanger types, sorted in *descending* order
-                      of their hot-inlet temperature so the hottest HEX is
-                      solved first (it constrains downstream HEXs).
-        Priority 4  – everything else (TES, custom components, …)
+        1 – single-stream pass-through components
+            (Turbine, Pump, Compressor, Pipe, Expansion_valve)
+        2 – flow-splitting / mixing components
+            (Splitter, Separator, Mixer)
+        3a – SimpleHEX heat exchangers   (solved first among HEXs)
+        3b – other HeatExchanger types   (double_pipe, Condenser, Evaporator)
+        4 – everything else (TES, custom components, …)
 
-        Within each priority group the original insertion order is preserved.
+        Within each group the original insertion order is preserved.
         """
         from .turbomachinery   import Turbine, Pump, Compressor
         from .simple_components import Splitter, Mixer, Separator, Pipe, Expansion_valve
         from .heat_exchangers  import HeatExchanger
 
-        # ── buckets ──────────────────────────────────────────────────────
         pass_through = []   # priority 1
         flow_split   = []   # priority 2
         simple_hex   = []   # priority 3a
-        other_hex    = []   # priority 3b  (will be sorted by T_hot_in)
+        other_hex    = []   # priority 3b
         rest         = []   # priority 4
 
         _pass_through_types = (Turbine, Pump, Compressor, Pipe, Expansion_valve)
@@ -125,24 +123,38 @@ class ThermodynamicModel:
             else:
                 rest.append((key, comp))
 
-        # ── sort non-SimpleHEX by hot-inlet temperature (descending) ─────
-        def _hot_inlet_T(item):
-            """
-            Return the hot-inlet temperature for a HeatExchanger.
-            Falls back to -inf so unsolved / one-sided HEXs sort last.
-            """
-            comp = item[1]
-            hot_in_name = getattr(comp, 'Hot_In_state', None)
-            if hot_in_name and hot_in_name in self.Point:
-                T = self.Point[hot_in_name].T
-                if isinstance(T, (int, float)):
-                    return T
-            return float('-inf')
+        return pass_through, flow_split, simple_hex, other_hex, rest
 
-        other_hex.sort(key=_hot_inlet_T, reverse=True)
+    def _sorted_components(self):
+        """
+        Flat priority ordering: pass-through, flow-split, SimpleHEX, other
+        HEX (ascending current unknown-count), everything else.
 
-        # ── concatenate in priority order ────────────────────────────────
-        ordered = pass_through + flow_split + simple_hex + other_hex + rest
+        This is NOT what the default Solve() uses to decide when to attempt
+        a component -- see ``_run_round_robin`` and ``_solve_hex_tiers``,
+        which loop each priority group to convergence before moving to the
+        next, so a later group is never attempted on stale/incomplete data
+        from an earlier one. This flat list exists for the two places that
+        genuinely want a single pass in priority order: filling in the
+        unlisted remainder of a ``custom_order``, and the final diagnostic
+        pass after a stall.
+        """
+        pass_through, flow_split, simple_hex, other_hex, rest = self._priority_buckets()
+
+        def _unknown_count(item):
+            """
+            Current pinch-solver unknown-count for a HeatExchanger, used
+            only to order the flat fallback list -- the default solve path
+            re-evaluates this live, not from this snapshot.
+            """
+            try:
+                return len(item[1]._identify_unknowns())
+            except Exception:
+                return 0
+
+        other_hex_sorted = sorted(other_hex, key=_unknown_count)
+
+        ordered = pass_through + flow_split + simple_hex + other_hex_sorted + rest
 
         if len(ordered) != len(self.Component):
             # safety net – append anything that was missed
@@ -152,6 +164,78 @@ class ThermodynamicModel:
                     ordered.append((key, comp))
 
         return ordered
+
+    def _run_round_robin(self, components, error_list, verbose=False):
+        """
+        Call Cal() on every component in ``components``, repeatedly, until
+        a full round adds no newly-solved component.
+
+        Already-solved components are still called again every round (Cal()
+        is idempotent and re-derives from current Model.Point state), which
+        is what lets a component pick up a value that changed because a
+        sibling in the same group solved later in an earlier round. The
+        round-robin is guaranteed to terminate: Solution_Status only ever
+        goes False → True, so each round either adds at least one newly-
+        solved component or the loop stops.
+
+        Returns the list of component IDs that became solved for the first
+        time during this call (used by Solve() to detect overall progress).
+        """
+        newly_solved = []
+        while True:
+            round_solved = []
+            for key, comp in components:
+                flag1 = not comp.Solution_Status
+                try:
+                    comp.Cal()
+                    if verbose:
+                        print(f"  solved {comp.ID}")
+                    if comp.Solution_Status:
+                        error_list.pop(key, None)
+                        if flag1:
+                            round_solved.append(key)
+                except Exception as e:
+                    if verbose:
+                        print(f"  could not solve {comp.ID}: {e}")
+                    error_list[key] = str(e)
+            if not round_solved:
+                return newly_solved
+            newly_solved.extend(round_solved)
+
+    def _solve_hex_tiers(self, other_hex, error_list, verbose=False):
+        """
+        Solve pinch-type heat exchangers (double_pipe / Condenser /
+        Evaporator) in ascending order of CURRENT unknown-count: every
+        exchanger solvable with fewer unknowns is driven to convergence
+        before a harder one is even attempted, so a 3-unknown HEX is never
+        solved against data a 1-unknown HEX would still have refined.
+
+        A HEX's unknown-count is re-evaluated at the start of every pass
+        (not cached), so resolving one exchanger can drop another's tier —
+        e.g. a shared mass flow becoming known turns a 2-unknown HEX into a
+        1-unknown one — and it joins an earlier tier on the next pass.
+        """
+        newly_solved = []
+        while True:
+            unsolved = [(key, comp) for key, comp in other_hex
+                        if not comp.Solution_Status]
+            if not unsolved:
+                return newly_solved
+
+            distinct_ns = sorted({len(comp._identify_unknowns())
+                                  for _, comp in unsolved})
+            progress = False
+            for target_n in distinct_ns:
+                tier = [(key, comp) for key, comp in unsolved
+                        if not comp.Solution_Status
+                        and len(comp._identify_unknowns()) == target_n]
+                solved_here = self._run_round_robin(tier, error_list, verbose)
+                if solved_here:
+                    newly_solved.extend(solved_here)
+                    progress = True
+
+            if not progress:
+                return newly_solved
     
     def Solve(self, max_iter=10, verbose=False, custom_order=None,
               tol=1e-8):
@@ -175,12 +259,27 @@ class ThermodynamicModel:
             in their default priority order so nothing is silently skipped.
             Example: M.Solve(custom_order=['Pump1', 'Boiler', 'Turbine1'])
 
-        Default priority order (used when custom_order is empty):
-          1. Pass-through (Turbine, Pump, Compressor, Pipe, Expansion_valve)
-          2. Flow-split / mixing  (Splitter, Separator, Mixer)
-          3a. SimpleHEX heat exchangers
-          3b. Other HeatExchanger types, sorted by hot-inlet T (descending)
-          4. Everything else
+        Default order (used when custom_order is empty) is staged, not a
+        single flat pass -- each group is looped to convergence before the
+        next is even attempted, so a later group never solves against
+        stale or incomplete data from an earlier one still settling:
+
+          1+2. Pass-through (Turbine, Pump, Compressor, Pipe,
+               Expansion_valve) together with flow-split / mixing
+               (Splitter, Separator, Mixer), looped as one group until a
+               full round solves nothing new in either.
+          3a.  SimpleHEX heat exchangers, looped to convergence.
+          3b.  Other HeatExchanger types (double_pipe, Condenser,
+               Evaporator), solved in ascending order of CURRENT
+               unknown-count -- every 1-unknown exchanger before any
+               2-unknown one, then 3-unknown -- re-evaluated each pass
+               since solving one can drop another's tier.
+          4.   Everything else (TES, custom components, …), looped to
+               convergence.
+
+        This whole sequence is one Solve() iteration; the next iteration
+        repeats it, so a HEX resolved in stage 3 that unblocks a pump back
+        in stage 1 is picked up on the next pass through the model.
         """
         from .heat_exchangers  import HeatExchanger
         custom_order = list(custom_order) if custom_order else []
@@ -214,8 +313,10 @@ class ThermodynamicModel:
                    if v.H is not None}
             solved_comp = []
 
-            # ── Build the ordered component list for this iteration ────────
             if custom_order:
+                # Escape hatch: exactly the caller's order, one flat pass
+                # per iteration, unlisted components appended in default
+                # priority order. Unchanged from pre-staged behaviour.
                 ordered_components = [(cid, self.Component[cid])
                                       for cid in custom_order]
 
@@ -223,26 +324,34 @@ class ThermodynamicModel:
                 remaining = [(k, c) for k, c in self._sorted_components()
                              if k not in listed]
                 ordered_components += remaining
-            else:
-                ordered_components = self._sorted_components()
 
-            for key, comp in ordered_components:
-                flag1 = True
-                try:
-                    if comp.Solution_Status == True:
-                        flag1 = False
-                    comp.Cal()
-                    if verbose:
-                        print(f"  solved {comp.ID}")
-                    if comp.Solution_Status == True:
-                        error_list.pop(key, None)
-                        if flag1:
-                            Solve_components += 1
-                            solved_comp.append(str(key))
-                except Exception as e:
-                    if verbose:
-                        print(f"  could not solve {comp.ID}: {e}")
-                    error_list[key] = str(e)
+                newly_solved = []
+                for key, comp in ordered_components:
+                    flag1 = not comp.Solution_Status
+                    try:
+                        comp.Cal()
+                        if verbose:
+                            print(f"  solved {comp.ID}")
+                        if comp.Solution_Status:
+                            error_list.pop(key, None)
+                            if flag1:
+                                newly_solved.append(key)
+                    except Exception as e:
+                        if verbose:
+                            print(f"  could not solve {comp.ID}: {e}")
+                        error_list[key] = str(e)
+            else:
+                # Staged default order -- see docstring above.
+                ordered_components = self._sorted_components()  # used only by the final stall pass below
+                pass_through, flow_split, simple_hex, other_hex, rest = self._priority_buckets()
+
+                newly_solved  = self._run_round_robin(pass_through + flow_split, error_list, verbose)
+                newly_solved += self._run_round_robin(simple_hex, error_list, verbose)
+                newly_solved += self._solve_hex_tiers(other_hex, error_list, verbose)
+                newly_solved += self._run_round_robin(rest, error_list, verbose)
+
+            Solve_components += len(newly_solved)
+            solved_comp = [str(k) for k in newly_solved]
 
             if old_Solve_components == Solve_components:
                 breakFlag += 1
@@ -250,7 +359,16 @@ class ThermodynamicModel:
                 breakFlag = 0
 
             if breakFlag >= 3:
-                for key, comp in ordered_components:
+                # In the default (non-custom_order) path, refresh rather
+                # than reuse `ordered_components`: it was snapshotted before
+                # this iteration's staged solving ran, so a HEX's
+                # unknown-count in it may already be stale. custom_order
+                # must keep the caller's explicit order, so it's left alone.
+                final_pass_components = (
+                    ordered_components if custom_order
+                    else self._sorted_components()
+                )
+                for key, comp in final_pass_components:
                     flag1 = True
                     try:
                         if comp.Solution_Status == True:

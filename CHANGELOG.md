@@ -1,6 +1,80 @@
 
 # Changelog
-## [3.2.5] - 2026-08-27
+## [3.3.0] - 2026-08-29
+
+### Added
+- **`Model.Solve()` uses a staged default solve order instead of one flat
+  priority pass.** Previously every iteration attempted pass-through
+  components, then junctions, then `SimpleHEX`, then other heat exchangers
+  sorted by hot-inlet temperature, all in a single pass — so a harder heat
+  exchanger could be attempted in the same round as an easier one still
+  waiting on upstream data, and heat exchangers were interleaved with a
+  still-settling simple network rather than solved after it stabilised.
+
+  The default order is now staged: pass-through and junction components
+  (Turbine, Pump, Compressor, Pipe, Expansion Valve, Splitter, Separator,
+  Mixer) are round-robined together to convergence; then `SimpleHEX`,
+  round-robined to convergence; then pinch-type heat exchangers
+  (`double_pipe`, `Condenser`, `Evaporator`), solved in ascending order of
+  *current* unknown-count — every 1-unknown exchanger fully converged
+  before any 2-unknown one is attempted, then 3-unknown — with the
+  unknown-count re-evaluated every pass, since resolving one exchanger can
+  drop another's tier; then everything else, round-robined to convergence.
+  The whole sequence repeats every `Solve()` iteration. `custom_order` is
+  unchanged.
+
+  `Model.Solve()` had no test coverage before this change — every existing
+  test and example bypasses it via `Calculate=True` in hand-ordered
+  construction. Added `tests/test_solve.py`, including a check that a
+  cycle built in a deliberately scrambled order converges to the same
+  state as the same cycle built in correct dependency order.
+
+  Also fixed a latent bug this exposed: `HeatExchanger._identify_unknowns()`
+  read `self.Hot_In`/`Hot_Out`/`Cold_In`/`Cold_Out`, which were previously
+  only ever set inside `Cal()` — calling it on a HEX before its first
+  `Cal()` (which the new tiering logic needs to do) raised `AttributeError`
+  instead of correctly reporting "everything unknown". Fixed by
+  initialising those attributes to `None` in `HeatExchanger.__init__`.
+
+- **`CyclePlotter.plot_Ts_diagram` / `plot_Ph_diagram` / `plot_hs_diagram`
+  can now plot several cycles on one diagram**, e.g. a cascade system's
+  two loops:
+
+  ```python
+  plotter.plot_Ph_diagram([
+      ['8', '9', '1', '2', '3', '4'],
+      ['3b', '5', '6', '7'],
+  ])
+  ```
+
+  `loop_points` accepts either a flat point-name list (unchanged single-
+  cycle behaviour) or a list of such lists. Each loop is drawn in its own
+  color with its own legend entry, and gets its own saturation dome —
+  auto-detected from its own first point, not a single global fluid — so a
+  cascade's mismatched refrigerants each get a correctly labelled dome.
+  Loops don't need to be point-disjoint: a cascade condenser's two sides
+  are free to share a point name if that's how the model is built. CSV
+  export tags every row with a `Loop` column.
+
+  Added two new optional parameters, `loop_labels` and `loop_colors`
+  (one entry per loop, `None` falls back to the auto value), for the case
+  where several loops share a fluid — e.g. a dual-pressure ORC's two
+  stages — where the auto legend label only differs by number
+  (`'Loop 1 (R245fa)'` / `'Loop 2 (R245fa)'`) and doesn't say which loop is
+  which:
+
+  ```python
+  plotter.plot_Ph_diagram(
+      [['h1', 'h2', 'h3', 'h4'], ['l1', 'l2', 'l3', 'l4']],
+      loop_labels=['High-Pressure Loop', 'Low-Pressure Loop'],
+      loop_colors=['crimson', 'navy'],
+  )
+  ```
+
+  `CyclePlotter` had no test coverage before this change. Added
+  `tests/test_plotting.py`, covering single-loop backward compatibility,
+  multi-fluid cascade rendering, same-fluid dual-pressure labeling, and
+  the `loop_labels`/`loop_colors` overrides.
 
 ### Fixed
 - **The discretised pinch no longer depends on `div_N`.** `_build_profile`

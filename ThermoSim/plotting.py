@@ -18,6 +18,7 @@ import CoolProp.CoolProp as CP
 import warnings
 import pandas as pd
 import os
+import itertools
 from datetime import datetime
 from dataclasses import dataclass
 
@@ -294,6 +295,145 @@ class CyclePlotter:
             ys.extend(y)
         return xs, ys
 
+    def _normalize_loops(self, loop_points):
+        """
+        Accept either a flat list of point names (single cycle) or a list
+        of such lists (several cycles on the same diagram -- e.g. the two
+        loops of a cascade refrigeration system, which may even share a
+        point where they thermally couple) and always return a list of
+        loops.
+
+        ``['1','2','3','4','1']`` -> ``[['1','2','3','4','1']]``
+        ``[['1','2'], ['3','4']]`` -> unchanged
+        """
+        if loop_points is None:
+            return None
+        loop_points = list(loop_points)
+        if loop_points and isinstance(loop_points[0], (list, tuple)):
+            return [list(loop) for loop in loop_points]
+        return [loop_points]
+
+    def _plot_multi_loop(self, ax, loops, x_prop, y_prop, x_scale, y_scale,
+                         color_palette, process_path, path_N, show_labels,
+                         label_text_color, csv_x_label, csv_y_label,
+                         csv_x_label_si, csv_y_label_si, semilogy=False,
+                         loop_labels=None, loop_colors=None):
+        """
+        Shared cycle-drawing core for plot_Ts_diagram / plot_Ph_diagram /
+        plot_hs_diagram: draws each loop in ``loops`` as its own coloured
+        process path + markers + legend entry.
+
+        x_prop, y_prop : attribute names on Prop to plot (e.g. 'S', 'T').
+        x_scale, y_scale : SI -> plot-unit conversion functions.
+        color_palette : colors cycled across loops that don't have an
+            explicit override in ``loop_colors``. Loop 1 always gets
+            ``color_palette[0]`` -- the diagram's traditional single-cycle
+            color -- so a single-loop call looks exactly as it did before
+            multi-loop support existed.
+        loop_labels : optional list of explicit legend labels, one per
+            loop. The auto label (fluid name) is a poor discriminator when
+            several loops share a fluid -- a dual-pressure ORC's two loops
+            both auto-label as e.g. 'Loop 1 (R245fa)' / 'Loop 2 (R245fa)',
+            which distinguishes them but doesn't say which is which.
+            Missing or falsy entries (``None``, ``''``) fall back to the
+            auto label for that loop.
+        loop_colors : optional list of explicit matplotlib colors, one per
+            loop (name, hex, or any matplotlib-accepted color spec).
+            Missing or falsy entries (``None``, ``''``) fall back to the
+            next color in ``color_palette``.
+
+        Returns (csv_data, plotted_any). csv_data is a list of row dicts
+        with a leading 'Loop' column (1-based); plotted_any is False when
+        no loop had at least two valid points, matching the old
+        "not enough valid points" bail-out.
+        """
+        colors = itertools.cycle(color_palette)
+        plot_fn = ax.semilogy if semilogy else ax.plot
+        csv_data = []
+        plotted_any = False
+
+        for loop_idx, loop in enumerate(loops, start=1):
+            x_vals, y_vals, valid_names = [], [], []
+            for name in loop:
+                try:
+                    pt = self.model.Point[name]
+                except KeyError:
+                    warnings.warn(f"Point '{name}' not found in model")
+                    continue
+
+                x_raw = self._safe_get_property(pt, x_prop)
+                y_raw = self._safe_get_property(pt, y_prop)
+                if x_raw is None or y_raw is None:
+                    warnings.warn(f"Point '{name}' missing {x_prop} or {y_prop}")
+                    continue
+
+                x_plot, y_plot = x_scale(x_raw), y_scale(y_raw)
+                x_vals.append(x_plot)
+                y_vals.append(y_plot)
+                valid_names.append(name)
+
+                csv_data.append({
+                    'Loop': loop_idx,
+                    'Point': name,
+                    csv_x_label: x_plot,
+                    csv_y_label: y_plot,
+                    csv_x_label_si: x_raw,
+                    csv_y_label_si: y_raw,
+                })
+
+            if len(x_vals) < 2:
+                if loop:
+                    warnings.warn(
+                        f"Loop {loop_idx}: not enough valid points to draw cycle"
+                    )
+                continue
+
+            auto_color = next(colors)
+            custom_color = (loop_colors[loop_idx - 1]
+                           if loop_colors and loop_idx - 1 < len(loop_colors)
+                           else None)
+            color = custom_color if custom_color else auto_color
+            fluid = getattr(self.model.Point.get(valid_names[0]), 'fluid', None)
+
+            if process_path:
+                pts = [(n_, self.model.Point[n_]) for n_ in valid_names]
+                x_line_si, y_line_si = self._cycle_path(pts, x_prop, y_prop, n=path_N)
+                x_line = [x_scale(v) for v in x_line_si]
+                y_line = [y_scale(v) for v in y_line_si]
+            else:
+                x_line, y_line = x_vals, y_vals
+
+            custom_label = (loop_labels[loop_idx - 1]
+                           if loop_labels and loop_idx - 1 < len(loop_labels)
+                           else None)
+            if custom_label:
+                label = custom_label
+            elif len(loops) == 1:
+                label = 'Cycle'
+            else:
+                label = f'Loop {loop_idx} ({fluid})' if fluid else f'Loop {loop_idx}'
+
+            plot_fn(x_line, y_line, '-', color=color,
+                   linewidth=self.config.cycle_linewidth, zorder=4, label=label)
+            plot_fn(x_vals, y_vals, 'o', color=color,
+                   markersize=self.config.marker_size, zorder=5)
+
+            if show_labels:
+                is_closed = (valid_names[0] == valid_names[-1])
+                label_points = valid_names[:-1] if is_closed else valid_names
+                for i, name in enumerate(label_points):
+                    ax.annotate(
+                        name, (x_vals[i], y_vals[i]),
+                        textcoords='offset points',
+                        xytext=(8, 8), fontsize=12,
+                        fontweight='bold', color=label_text_color,
+                        bbox=dict(boxstyle='round,pad=0.3',
+                                 facecolor='yellow', alpha=0.3)
+                    )
+            plotted_any = True
+
+        return csv_data, plotted_any
+
     def _generate_csv_filename(self, base_name, csv_path=None):
         """Generate CSV filename with timestamp if not provided"""
         if csv_path:
@@ -324,21 +464,43 @@ class CyclePlotter:
                         show_dome=True, show_labels=True,
                         title='T-s Diagram', figsize=(10, 7),
                         save_csv=False, csv_path=None,
-                        process_path=True, path_N=60):
+                        process_path=True, path_N=60, loop_labels=None,
+                        loop_colors=None):
         """
         Plot a Temperature–Entropy diagram.
 
         Parameters
         ----------
-        loop_points : list of str, optional
+        loop_points : list of str, or list of list of str, optional
             State-point names in cycle order, e.g. ['1','2','3','4','1'].
             The last name should repeat the first to close the loop.
-            If None, every point is plotted as a scatter dot.
+            Pass a list of such lists to plot several cycles on the same
+            diagram -- e.g. the two loops of a cascade system, which may
+            share a point where they thermally couple:
+            ``[['8','9','1','2','3','4'], ['3','5','6','7']]``. Each loop
+            is drawn in its own color with its own legend entry, and gets
+            its own saturation dome if it uses a different fluid.
+            If None, every point in the model is plotted as a scatter dot.
         fluid : str, optional
-            Fluid name for the saturation dome.  Auto-detected from
-            the first point in loop_points when omitted.
+            Fluid name for the saturation dome, applied to every loop.
+            Auto-detected per loop from its first point when omitted --
+            the usual case for a cascade system, where each loop has its
+            own fluid.
+        loop_labels : list of str, optional
+            Explicit legend label per loop, e.g.
+            ``['High-Pressure Loop', 'Low-Pressure Loop']`` for a
+            dual-pressure ORC. Needed when several loops share a fluid --
+            the auto label is then just ``'Loop 1 (R245fa)'`` /
+            ``'Loop 2 (R245fa)'``, which tells the loops apart but not
+            which is which. Entries left as ``None`` fall back to the
+            auto label for that loop.
+        loop_colors : list of matplotlib colors, optional
+            Explicit color per loop (name, hex, or anything matplotlib
+            accepts), e.g. ``['crimson', 'navy']``. Entries left as
+            ``None`` fall back to the next color in the diagram's default
+            palette.
         show_dome : bool
-            Draw the saturation dome behind the cycle.
+            Draw the saturation dome(s) behind the cycle(s).
         show_labels : bool
             Annotate each state-point number on the diagram.
         title : str
@@ -363,87 +525,46 @@ class CyclePlotter:
         fig, ax : matplotlib figure and axes
         """
         fig, ax = plt.subplots(figsize=figsize)
+        loops = self._normalize_loops(loop_points)
 
-        # ---- Auto-detect fluid ----
-        if fluid is None and loop_points:
-            try:
-                fluid = self.model.Point[loop_points[0]].fluid
-            except (KeyError, AttributeError):
-                warnings.warn("Could not auto-detect fluid")
-
-        # ---- Saturation dome ----
-        if show_dome and self._can_draw_dome(fluid):
-            self._draw_saturation_dome(ax, fluid)
+        # ---- Saturation dome(s) ----
+        # One per unique fluid across all loops, auto-detected per loop
+        # unless an explicit `fluid` override applies to all of them.
+        if show_dome and loops:
+            fluids_seen = []
+            for loop in loops:
+                f = fluid
+                if f is None and loop:
+                    try:
+                        f = self.model.Point[loop[0]].fluid
+                    except (KeyError, AttributeError):
+                        warnings.warn("Could not auto-detect fluid")
+                        f = None
+                if f and f not in fluids_seen:
+                    fluids_seen.append(f)
+            for f in fluids_seen:
+                if self._can_draw_dome(f):
+                    label = 'Saturation' if len(fluids_seen) == 1 else f'Saturation ({f})'
+                    self._draw_saturation_dome(ax, f, label=label)
 
         # ---- Prepare data collection for CSV ----
         csv_data = []
 
         # ---- Cycle plotting ----
-        if loop_points is not None:
-            S_vals, T_vals, valid_names = [], [], []
-            
-            for name in loop_points:
-                try:
-                    pt = self.model.Point[name]
-                except KeyError:
-                    warnings.warn(f"Point '{name}' not found in model")
-                    continue
-                
-                S = self._safe_get_property(pt, 'S')
-                T = self._safe_get_property(pt, 'T')
-                
-                if S is None or T is None:
-                    warnings.warn(f"Point '{name}' missing S or T")
-                    continue
-                
-                S_plot = S / 1e3
-                T_plot = T - 273.15
-                
-                S_vals.append(S_plot)
-                T_vals.append(T_plot)
-                valid_names.append(name)
-                
-                # Collect data for CSV
-                csv_data.append({
-                    'Point': name,
-                    'Entropy_kJ_per_kg_K': S_plot,
-                    'Temperature_C': T_plot,
-                    'Entropy_J_per_kg_K': S,
-                    'Temperature_K': T
-                })
-            
-            if len(S_vals) < 2:
+        if loops is not None:
+            csv_data, plotted_any = self._plot_multi_loop(
+                ax, loops, 'S', 'T',
+                x_scale=lambda S: S / 1e3, y_scale=lambda T: T - 273.15,
+                color_palette=['blue', 'red', 'green', 'purple', 'orange', 'brown'],
+                process_path=process_path, path_N=path_N,
+                show_labels=show_labels, label_text_color='darkblue',
+                csv_x_label='Entropy_kJ_per_kg_K', csv_y_label='Temperature_C',
+                csv_x_label_si='Entropy_J_per_kg_K', csv_y_label_si='Temperature_K',
+                loop_labels=loop_labels, loop_colors=loop_colors,
+            )
+            if not plotted_any:
                 warnings.warn("Not enough valid points to draw cycle")
                 return fig, ax
-
-            if process_path:
-                pts = [(n_, self.model.Point[n_]) for n_ in valid_names]
-                S_line, T_line = self._cycle_path(pts, 'S', 'T', n=path_N)
-                S_line = [s / 1e3 for s in S_line]
-                T_line = [t - 273.15 for t in T_line]
-            else:
-                S_line, T_line = S_vals, T_vals
-
-            ax.plot(S_line, T_line, '-', color=self.config.cycle_color,
-                    linewidth=self.config.cycle_linewidth,
-                    zorder=4, label='Cycle')
-            ax.plot(S_vals, T_vals, 'o', color=self.config.cycle_color,
-                    markersize=self.config.marker_size, zorder=5)
-            
-            if show_labels:
-                # Check if cycle is closed
-                is_closed = (valid_names[0] == valid_names[-1])
-                label_points = valid_names[:-1] if is_closed else valid_names
-                
-                for i, name in enumerate(label_points):
-                    ax.annotate(
-                        name, (S_vals[i], T_vals[i]),
-                        textcoords='offset points',
-                        xytext=(8, 8), fontsize=12,
-                        fontweight='bold', color='darkblue',
-                        bbox=dict(boxstyle='round,pad=0.3', 
-                                 facecolor='yellow', alpha=0.3)
-                    )
         else:
             # Scatter mode
             for name, pt in self.model.Point.items():
@@ -494,18 +615,41 @@ class CyclePlotter:
                         show_dome=True, show_labels=True,
                         title='P-h Diagram', figsize=(10, 7),
                         save_csv=False, csv_path=None,
-                        process_path=True, path_N=60):
+                        process_path=True, path_N=60, loop_labels=None,
+                        loop_colors=None):
         """
         Plot a log-Pressure vs Enthalpy diagram.
 
         Parameters
         ----------
-        loop_points : list of str, optional
-            State-point names in cycle order.
+        loop_points : list of str, or list of list of str, optional
+            State-point names in cycle order. Pass a list of such lists to
+            plot several cycles on the same diagram -- e.g. the two loops
+            of a cascade system, which may share a point where they
+            thermally couple:
+            ``[['8','9','1','2','3','4'], ['3','5','6','7']]``. Each loop
+            is drawn in its own color with its own legend entry, and gets
+            its own saturation dome if it uses a different fluid.
         fluid : str, optional
-            Fluid name for saturation dome.
+            Fluid name for the saturation dome, applied to every loop.
+            Auto-detected per loop from its first point when omitted --
+            the usual case for a cascade system, where each loop has its
+            own fluid.
+        loop_labels : list of str, optional
+            Explicit legend label per loop, e.g.
+            ``['High-Pressure Loop', 'Low-Pressure Loop']`` for a
+            dual-pressure ORC. Needed when several loops share a fluid --
+            the auto label is then just ``'Loop 1 (R245fa)'`` /
+            ``'Loop 2 (R245fa)'``, which tells the loops apart but not
+            which is which. Entries left as ``None`` fall back to the
+            auto label for that loop.
+        loop_colors : list of matplotlib colors, optional
+            Explicit color per loop (name, hex, or anything matplotlib
+            accepts), e.g. ``['crimson', 'navy']``. Entries left as
+            ``None`` fall back to the next color in the diagram's default
+            palette.
         show_dome : bool
-            Draw the saturation dome.
+            Draw the saturation dome(s).
         show_labels : bool
             Annotate state points.
         title : str
@@ -522,81 +666,42 @@ class CyclePlotter:
         fig, ax : matplotlib figure and axes
         """
         fig, ax = plt.subplots(figsize=figsize)
+        loops = self._normalize_loops(loop_points)
 
-        if fluid is None and loop_points:
-            try:
-                fluid = self.model.Point[loop_points[0]].fluid
-            except (KeyError, AttributeError):
-                warnings.warn("Could not auto-detect fluid")
-
-        # dome
-        if show_dome and self._can_draw_dome(fluid):
-            self._draw_saturation_dome_Ph(ax, fluid)
+        # ---- Saturation dome(s) ----
+        if show_dome and loops:
+            fluids_seen = []
+            for loop in loops:
+                f = fluid
+                if f is None and loop:
+                    try:
+                        f = self.model.Point[loop[0]].fluid
+                    except (KeyError, AttributeError):
+                        warnings.warn("Could not auto-detect fluid")
+                        f = None
+                if f and f not in fluids_seen:
+                    fluids_seen.append(f)
+            for f in fluids_seen:
+                if self._can_draw_dome(f):
+                    label = 'Saturation' if len(fluids_seen) == 1 else f'Saturation ({f})'
+                    self._draw_saturation_dome_Ph(ax, f, label=label)
 
         csv_data = []
 
-        if loop_points is not None:
-            H_vals, P_vals, valid_names = [], [], []
-            
-            for name in loop_points:
-                try:
-                    pt = self.model.Point[name]
-                except KeyError:
-                    warnings.warn(f"Point '{name}' not found")
-                    continue
-                
-                H = self._safe_get_property(pt, 'H')
-                P = self._safe_get_property(pt, 'P')
-                
-                if H is None or P is None:
-                    warnings.warn(f"Point '{name}' missing H or P")
-                    continue
-                
-                H_plot = H / 1e3
-                P_plot = P / 1e5
-                
-                H_vals.append(H_plot)
-                P_vals.append(P_plot)
-                valid_names.append(name)
-                
-                csv_data.append({
-                    'Point': name,
-                    'Enthalpy_kJ_per_kg': H_plot,
-                    'Pressure_bar': P_plot,
-                    'Enthalpy_J_per_kg': H,
-                    'Pressure_Pa': P
-                })
-            
-            if len(H_vals) < 2:
+        if loops is not None:
+            csv_data, plotted_any = self._plot_multi_loop(
+                ax, loops, 'H', 'P',
+                x_scale=lambda H: H / 1e3, y_scale=lambda P: P / 1e5,
+                color_palette=['red', 'blue', 'green', 'purple', 'orange', 'brown'],
+                process_path=process_path, path_N=path_N,
+                show_labels=show_labels, label_text_color='darkred',
+                csv_x_label='Enthalpy_kJ_per_kg', csv_y_label='Pressure_bar',
+                csv_x_label_si='Enthalpy_J_per_kg', csv_y_label_si='Pressure_Pa',
+                semilogy=True, loop_labels=loop_labels, loop_colors=loop_colors,
+            )
+            if not plotted_any:
                 warnings.warn("Not enough valid points to draw cycle")
                 return fig, ax
-
-            if process_path:
-                pts = [(n_, self.model.Point[n_]) for n_ in valid_names]
-                H_line, P_line = self._cycle_path(pts, 'H', 'P', n=path_N)
-                H_line = [h / 1e3 for h in H_line]
-                P_line = [p / 1e5 for p in P_line]
-            else:
-                H_line, P_line = H_vals, P_vals
-
-            ax.semilogy(H_line, P_line, '-', color='red',
-                        linewidth=2, zorder=4, label='Cycle')
-            ax.semilogy(H_vals, P_vals, 'o', color='red',
-                        markersize=8, zorder=5)
-
-            if show_labels:
-                is_closed = (valid_names[0] == valid_names[-1])
-                label_points = valid_names[:-1] if is_closed else valid_names
-                
-                for i, name in enumerate(label_points):
-                    ax.annotate(
-                        name, (H_vals[i], P_vals[i]),
-                        textcoords='offset points',
-                        xytext=(8, 8), fontsize=12,
-                        fontweight='bold', color='darkred',
-                        bbox=dict(boxstyle='round,pad=0.3',
-                                 facecolor='yellow', alpha=0.3)
-                    )
         else:
             for name, pt in self.model.Point.items():
                 H = self._safe_get_property(pt, 'H')
@@ -645,18 +750,41 @@ class CyclePlotter:
                         show_dome=True, show_labels=True,
                         title='h-s Diagram', figsize=(10, 7),
                         save_csv=False, csv_path=None,
-                        process_path=True, path_N=60):
+                        process_path=True, path_N=60, loop_labels=None,
+                        loop_colors=None):
         """
         Enthalpy vs Entropy (Mollier) diagram.
 
         Parameters
         ----------
-        loop_points : list of str, optional
-            State-point names in cycle order.
+        loop_points : list of str, or list of list of str, optional
+            State-point names in cycle order. Pass a list of such lists to
+            plot several cycles on the same diagram -- e.g. the two loops
+            of a cascade system, which may share a point where they
+            thermally couple:
+            ``[['8','9','1','2','3','4'], ['3','5','6','7']]``. Each loop
+            is drawn in its own color with its own legend entry, and gets
+            its own saturation dome if it uses a different fluid.
         fluid : str, optional
-            Fluid name for saturation dome.
+            Fluid name for the saturation dome, applied to every loop.
+            Auto-detected per loop from its first point when omitted --
+            the usual case for a cascade system, where each loop has its
+            own fluid.
+        loop_labels : list of str, optional
+            Explicit legend label per loop, e.g.
+            ``['High-Pressure Loop', 'Low-Pressure Loop']`` for a
+            dual-pressure ORC. Needed when several loops share a fluid --
+            the auto label is then just ``'Loop 1 (R245fa)'`` /
+            ``'Loop 2 (R245fa)'``, which tells the loops apart but not
+            which is which. Entries left as ``None`` fall back to the
+            auto label for that loop.
+        loop_colors : list of matplotlib colors, optional
+            Explicit color per loop (name, hex, or anything matplotlib
+            accepts), e.g. ``['crimson', 'navy']``. Entries left as
+            ``None`` fall back to the next color in the diagram's default
+            palette.
         show_dome : bool
-            Draw saturation dome.
+            Draw saturation dome(s).
         show_labels : bool
             Annotate points.
         title : str
@@ -673,80 +801,42 @@ class CyclePlotter:
         fig, ax : matplotlib figure and axes
         """
         fig, ax = plt.subplots(figsize=figsize)
+        loops = self._normalize_loops(loop_points)
 
-        if fluid is None and loop_points:
-            try:
-                fluid = self.model.Point[loop_points[0]].fluid
-            except (KeyError, AttributeError):
-                warnings.warn("Could not auto-detect fluid")
-
-        if show_dome and self._can_draw_dome(fluid):
-            self._draw_saturation_dome_hs(ax, fluid)
+        # ---- Saturation dome(s) ----
+        if show_dome and loops:
+            fluids_seen = []
+            for loop in loops:
+                f = fluid
+                if f is None and loop:
+                    try:
+                        f = self.model.Point[loop[0]].fluid
+                    except (KeyError, AttributeError):
+                        warnings.warn("Could not auto-detect fluid")
+                        f = None
+                if f and f not in fluids_seen:
+                    fluids_seen.append(f)
+            for f in fluids_seen:
+                if self._can_draw_dome(f):
+                    label = 'Saturation' if len(fluids_seen) == 1 else f'Saturation ({f})'
+                    self._draw_saturation_dome_hs(ax, f, label=label)
 
         csv_data = []
 
-        if loop_points is not None:
-            S_vals, H_vals, valid_names = [], [], []
-            
-            for n in loop_points:
-                try:
-                    pt = self.model.Point[n]
-                except KeyError:
-                    warnings.warn(f"Point '{n}' not found")
-                    continue
-                
-                S = self._safe_get_property(pt, 'S')
-                H = self._safe_get_property(pt, 'H')
-                
-                if S is None or H is None:
-                    warnings.warn(f"Point '{n}' missing S or H")
-                    continue
-                
-                S_plot = S / 1e3
-                H_plot = H / 1e3
-                
-                S_vals.append(S_plot)
-                H_vals.append(H_plot)
-                valid_names.append(n)
-                
-                csv_data.append({
-                    'Point': n,
-                    'Entropy_kJ_per_kg_K': S_plot,
-                    'Enthalpy_kJ_per_kg': H_plot,
-                    'Entropy_J_per_kg_K': S,
-                    'Enthalpy_J_per_kg': H
-                })
-            
-            if len(S_vals) < 2:
+        if loops is not None:
+            csv_data, plotted_any = self._plot_multi_loop(
+                ax, loops, 'S', 'H',
+                x_scale=lambda S: S / 1e3, y_scale=lambda H: H / 1e3,
+                color_palette=['green', 'blue', 'red', 'purple', 'orange', 'brown'],
+                process_path=process_path, path_N=path_N,
+                show_labels=show_labels, label_text_color='darkgreen',
+                csv_x_label='Entropy_kJ_per_kg_K', csv_y_label='Enthalpy_kJ_per_kg',
+                csv_x_label_si='Entropy_J_per_kg_K', csv_y_label_si='Enthalpy_J_per_kg',
+                loop_labels=loop_labels, loop_colors=loop_colors,
+            )
+            if not plotted_any:
                 warnings.warn("Not enough valid points to draw cycle")
                 return fig, ax
-            
-            if process_path:
-                pts = [(n_, self.model.Point[n_]) for n_ in valid_names]
-                S_line, H_line = self._cycle_path(pts, 'S', 'H', n=path_N)
-                S_line = [s / 1e3 for s in S_line]
-                H_line = [h / 1e3 for h in H_line]
-            else:
-                S_line, H_line = S_vals, H_vals
-
-            ax.plot(S_line, H_line, '-', color='green',
-                    linewidth=2, zorder=4, label='Cycle')
-            ax.plot(S_vals, H_vals, 'o', color='green',
-                    markersize=8, zorder=5)
-
-            if show_labels:
-                is_closed = (valid_names[0] == valid_names[-1])
-                label_points = valid_names[:-1] if is_closed else valid_names
-                
-                for i, name in enumerate(label_points):
-                    ax.annotate(
-                        name, (S_vals[i], H_vals[i]),
-                        textcoords='offset points',
-                        xytext=(8, 8), fontsize=12,
-                        fontweight='bold', color='darkgreen',
-                        bbox=dict(boxstyle='round,pad=0.3',
-                                 facecolor='yellow', alpha=0.3)
-                    )
         else:
             for name, pt in self.model.Point.items():
                 S = self._safe_get_property(pt, 'S')
@@ -1325,7 +1415,7 @@ class CyclePlotter:
     # ================================================================ #
     #  Internal:  Saturation Domes
     # ================================================================ #
-    def _draw_saturation_dome(self, ax, fluid):
+    def _draw_saturation_dome(self, ax, fluid, label='Saturation'):
         """Draw saturation dome on T-s axes."""
         try:
             T_min = CP.PropsSI('TTRIPLE', fluid) + 1
@@ -1338,14 +1428,14 @@ class CyclePlotter:
                               for T in T_range]) / 1e3
             T_plot = T_range - 273.15
 
-            ax.plot(S_liq, T_plot, 'k-', linewidth=1, alpha=0.5, label='Saturation')
+            ax.plot(S_liq, T_plot, 'k-', linewidth=1, alpha=0.5, label=label)
             ax.plot(S_vap, T_plot, 'k-', linewidth=1, alpha=0.5)
             ax.fill_betweenx(T_plot, S_liq, S_vap,
                              alpha=0.06, color='blue')
         except Exception as e:
             warnings.warn(f"Could not draw T-s saturation dome for {fluid}: {e}")
 
-    def _draw_saturation_dome_Ph(self, ax, fluid):
+    def _draw_saturation_dome_Ph(self, ax, fluid, label='Saturation'):
         """Draw saturation dome on P-h axes."""
         try:
             T_min = CP.PropsSI('TTRIPLE', fluid) + 1
@@ -1361,12 +1451,12 @@ class CyclePlotter:
             P_vap = np.array([CP.PropsSI('P', 'T', T, 'Q', 1, fluid)
                               for T in T_range]) / 1e5
 
-            ax.semilogy(H_liq, P_liq, 'k-', linewidth=1, alpha=0.5, label='Saturation')
+            ax.semilogy(H_liq, P_liq, 'k-', linewidth=1, alpha=0.5, label=label)
             ax.semilogy(H_vap, P_vap, 'k-', linewidth=1, alpha=0.5)
         except Exception as e:
             warnings.warn(f"Could not draw P-h saturation dome for {fluid}: {e}")
 
-    def _draw_saturation_dome_hs(self, ax, fluid):
+    def _draw_saturation_dome_hs(self, ax, fluid, label='Saturation'):
         """Draw saturation dome on h-s axes."""
         try:
             T_min = CP.PropsSI('TTRIPLE', fluid) + 1
@@ -1382,7 +1472,7 @@ class CyclePlotter:
             H_vap = np.array([CP.PropsSI('H', 'T', T, 'Q', 1, fluid)
                               for T in T_range]) / 1e3
 
-            ax.plot(S_liq, H_liq, 'k-', linewidth=1, alpha=0.5, label='Saturation')
+            ax.plot(S_liq, H_liq, 'k-', linewidth=1, alpha=0.5, label=label)
             ax.plot(S_vap, H_vap, 'k-', linewidth=1, alpha=0.5)
         except Exception as e:
             warnings.warn(f"Could not draw h-s saturation dome for {fluid}: {e}")
