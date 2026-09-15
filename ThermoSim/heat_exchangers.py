@@ -37,6 +37,8 @@ import CoolProp.CoolProp as CP
 from scipy.optimize import brentq, differential_evolution
 
 from .base_component import Component
+from .nh3h2o import NH3H2OFluid
+from . import nh3h2o as _aw
 
 
 # --------------------------------------------------------------------------- #
@@ -70,7 +72,26 @@ def _safe_T_min(fluid, P, margin=0.05, max_steps=40):
 
     The bound is finally confirmed by evaluation and walked upward if that
     fails, so this never returns a temperature CoolProp will reject.
+
+    NH3-H2O mixture: there is no CoolProp fluid here to query, so the lower
+    bound is nh3h2o's own validated envelope (``T_MIN`` = 230 K, no
+    pressure-dependent melting line to account for), walked upward the same
+    way if that fails to evaluate.
     """
+    if isinstance(fluid, NH3H2OFluid):
+        P_bar = P / 1e5
+        T = _aw.T_MIN + margin
+        for _ in range(max_steps):
+            try:
+                _aw.state(z=fluid.z, T=T, P=P_bar, warn=False)
+                return T
+            except _aw.AmmoniaWaterError:
+                T += max(margin, 0.01 * _aw.T_MIN)
+        raise ValueError(
+            f"_safe_T_min: no valid lower temperature bound for {fluid} "
+            f"at P = {P:.0f} Pa"
+        )
+
     T_lo = CP.PropsSI('TMIN', fluid)
     try:
         if fluid not in _AS_CACHE:
@@ -91,6 +112,36 @@ def _safe_T_min(fluid, P, margin=0.05, max_steps=40):
         f"_safe_T_min: no valid lower temperature bound for {fluid} "
         f"at P = {P:.0f} Pa"
     )
+
+
+def _safe_T_max(fluid, P, margin=0.05, max_steps=40):
+    """
+    Upper temperature bound for a root-finding bracket on `fluid` at `P`.
+
+    Replaces the inline ``CP.PropsSI('TMAX', fluid)`` calls the 2-unknown
+    solver used to make at each of its ten call sites. For a CoolProp fluid
+    this returns exactly that value -- unchanged from before, so existing
+    (single-fluid) HeatExchanger behaviour is bit-for-bit identical.
+
+    NH3-H2O mixture: there is no CoolProp TMAX to query, so the upper bound
+    is nh3h2o's own validated envelope (``T_MAX`` = 500 K), walked DOWNWARD
+    until it evaluates -- the mirror image of ``_safe_T_min``'s upward walk
+    from ``T_MIN``.
+    """
+    if isinstance(fluid, NH3H2OFluid):
+        P_bar = P / 1e5
+        T = _aw.T_MAX - margin
+        for _ in range(max_steps):
+            try:
+                _aw.state(z=fluid.z, T=T, P=P_bar, warn=False)
+                return T
+            except _aw.AmmoniaWaterError:
+                T -= max(margin, 0.01 * _aw.T_MAX)
+        raise ValueError(
+            f"_safe_T_max: no valid upper temperature bound for {fluid} "
+            f"at P = {P:.0f} Pa"
+        )
+    return CP.PropsSI('TMAX', fluid)
 
 
 
@@ -189,15 +240,26 @@ def _phase_boundary_alphas(fluid, P_ref, H_start, H_end):
     Returns [] for fluids/pressures with no two-phase envelope at P_ref
     (incompressible fluids, supercritical pressure) or when neither
     boundary lies strictly inside [H_start, H_end].
+
+    NH3-H2O mixture: `fluid` carries a fixed overall composition z (this is
+    ONE flowing stream, not a splitting one), so its bubble/dew enthalpies
+    at P_ref are simply the (P, Q=0) / (P, Q=1) flashes at that same z.
     """
     span = H_end - H_start
     if abs(span) < 1e-9:
         return []
-    try:
-        H_liq = CP.PropsSI('H', 'P', P_ref, 'Q', 0, fluid)
-        H_vap = CP.PropsSI('H', 'P', P_ref, 'Q', 1, fluid)
-    except Exception:
-        return []          # incompressible fluid or supercritical pressure
+    if isinstance(fluid, NH3H2OFluid):
+        try:
+            H_liq = _aw.state(z=fluid.z, P=P_ref / 1e5, Q=0.0, warn=False).h * 1e3
+            H_vap = _aw.state(z=fluid.z, P=P_ref / 1e5, Q=1.0, warn=False).h * 1e3
+        except _aw.AmmoniaWaterError:
+            return []      # pure-component limit or no two-phase envelope here
+    else:
+        try:
+            H_liq = CP.PropsSI('H', 'P', P_ref, 'Q', 0, fluid)
+            H_vap = CP.PropsSI('H', 'P', P_ref, 'Q', 1, fluid)
+        except Exception:
+            return []          # incompressible fluid or supercritical pressure
 
     alphas = []
     for H_sat in (H_liq, H_vap):
@@ -707,7 +769,7 @@ class HeatExchanger(Component):
                 except Exception:
                     return _PENALTY * sign_factor  # large penalty if state point is invalid
             H_lo = self._min_H(HI)
-            H_hi_bound = self.Model.Prop(HI.fluid, StatePointName='_hi_bound', T=CP.PropsSI('TMAX', HI.fluid), P=HI.P).H-1e-3
+            H_hi_bound = self.Model.Prop(HI.fluid, StatePointName='_hi_bound', T=_safe_T_max(HI.fluid, HI.P), P=HI.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
@@ -735,7 +797,7 @@ class HeatExchanger(Component):
                 except Exception:
                     return _PENALTY * sign_factor
             H_lo = self._min_H(HO, T_floor=CI.T if CI is not None else None)
-            H_hi_bound = self.Model.Prop(HO.fluid, StatePointName='_ho_hi', T=CP.PropsSI('TMAX', HO.fluid), P=HO.P).H-1e-3
+            H_hi_bound = self.Model.Prop(HO.fluid, StatePointName='_ho_hi', T=_safe_T_max(HO.fluid, HO.P), P=HO.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
@@ -764,7 +826,7 @@ class HeatExchanger(Component):
                 except Exception:
                     return _PENALTY * sign_factor  # large penalty if state point is invalid
             H_lo = self._min_H(CI)
-            H_hi_bound = self.Model.Prop(CI.fluid, StatePointName='_ci_hi', T=CP.PropsSI('TMAX', CI.fluid), P=CI.P).H-1e-3
+            H_hi_bound = self.Model.Prop(CI.fluid, StatePointName='_ci_hi', T=_safe_T_max(CI.fluid, CI.P), P=CI.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
@@ -794,7 +856,7 @@ class HeatExchanger(Component):
                 except Exception:
                     return _PENALTY * sign_factor  # large penalty if state point is invalid
             H_lo = self._min_H(CO, T_floor=CI.T if CI is not None else None)
-            H_hi_bound = self.Model.Prop(CO.fluid, StatePointName='_co_hi', T=CP.PropsSI('TMAX', CO.fluid), P=CO.P).H-1e-3
+            H_hi_bound = self.Model.Prop(CO.fluid, StatePointName='_co_hi', T=_safe_T_max(CO.fluid, CO.P), P=CO.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
@@ -833,7 +895,7 @@ class HeatExchanger(Component):
                     return _PENALTY * sign_factor  # large penalty if state point is invalid
                 return _res_cth(Q_h, mh, mc_)
             H_lo = self._min_H(HI)
-            H_hi_bound = self.Model.Prop(HI.fluid, StatePointName='_hi_bound', T=CP.PropsSI('TMAX', HI.fluid) , P=HI.P).H-1e-3
+            H_hi_bound = self.Model.Prop(HI.fluid, StatePointName='_hi_bound', T=_safe_T_max(HI.fluid, HI.P) , P=HI.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
@@ -865,7 +927,7 @@ class HeatExchanger(Component):
                     return _PENALTY * sign_factor  # large penalty if state point is invalid
             H_lo = self._min_H(HO, margin=1.0,
                                T_floor=CI.T if CI is not None else None)
-            H_hi_bound = self.Model.Prop(HO.fluid, StatePointName='_ho_hi', T= CP.PropsSI('TMAX', HO.fluid), P=HO.P).H-1e-3
+            H_hi_bound = self.Model.Prop(HO.fluid, StatePointName='_ho_hi', T= _safe_T_max(HO.fluid, HO.P), P=HO.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
@@ -898,7 +960,7 @@ class HeatExchanger(Component):
                 except Exception:
                     return _PENALTY * sign_factor
             H_lo = self._min_H(CI)
-            H_hi_bound = self.Model.Prop(CI.fluid, StatePointName='_lo_bound', T=CP.PropsSI('TMAX', CI.fluid), P=CI.P).H-1e-3
+            H_hi_bound = self.Model.Prop(CI.fluid, StatePointName='_lo_bound', T=_safe_T_max(CI.fluid, CI.P), P=CI.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:                
                 try:
@@ -928,7 +990,7 @@ class HeatExchanger(Component):
                 except Exception:
                     return _PENALTY * sign_factor
             H_lo = self._min_H(CO, T_floor=CI.T if CI is not None else None)
-            H_hi_bound = self.Model.Prop(CO.fluid, StatePointName='_hi_bound', T=CP.PropsSI('TMAX', CO.fluid), P=CO.P).H-1e-3
+            H_hi_bound = self.Model.Prop(CO.fluid, StatePointName='_hi_bound', T=_safe_T_max(CO.fluid, CO.P), P=CO.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:      
                 try:          
@@ -965,7 +1027,7 @@ class HeatExchanger(Component):
                 except Exception as e :
                     return _PENALTY * sign_factor
 
-            Max_H_ci = self.Model.Prop(CI.fluid,StatePointName='_h_bound',P=CI.P, T = CP.PropsSI('TMAX', CI.fluid)).H
+            Max_H_ci = self.Model.Prop(CI.fluid,StatePointName='_h_bound',P=CI.P, T = _safe_T_max(CI.fluid, CI.P)).H
             Min_H_ci = self._min_H(CI, margin=0.0)
             H_lo = HO.H + mc*(CO.H - Max_H_ci)/mh+1e-3
             H_hi_bound = HO.H + mc*(CO.H - Min_H_ci)/mh-1e-3
@@ -1049,7 +1111,7 @@ class HeatExchanger(Component):
                     return _res_cth(Q_h, mh, mc)
                 except Exception as e:
                     return _PENALTY * sign_factor
-            Max_H_co = self.Model.Prop(CO.fluid,StatePointName='_h_bound',P=CO.P, T = CP.PropsSI('TMAX', CO.fluid)).H
+            Max_H_co = self.Model.Prop(CO.fluid,StatePointName='_h_bound',P=CO.P, T = _safe_T_max(CO.fluid, CO.P)).H
             Min_H_co = self._min_H(CO, margin=0.0)
             H_lo = HI.H - mc*(Max_H_co - CI.H )/mh + 1e-3
             H_hi_bound = HI.H - mc*(Min_H_co - CI.H )/mh - 1e-3
