@@ -27,6 +27,69 @@ def _check_convergence(sol, info, msg_prefix):
         )
 
 
+def _resolve_mass_with_target_work(component, In, Out, work_given, w_eff):
+    """
+    Resolve a turbomachine's mass flow rate, accounting for an optional
+    target ``work`` (the constructor's ``work=`` argument) alongside the
+    usual port-based resolution.
+
+    ``w_eff`` is the mechanical-efficiency-adjusted specific work implied by
+    the already-solved (In.H, Out.H) pair -- turbine: (h_in-h_out)*n_mech;
+    pump/compressor: (h_out-h_in)/n_mech -- i.e. exactly what multiplying by
+    mass gives ``self.work``. It must be computed AFTER the enthalpy solve,
+    which is why this runs later in Cal() than the old direct call to
+    ``_resolve_mass_flowrate`` used to.
+
+    Two cases, matching ``base_component._resolve_mass_flowrate``'s
+    ``(mass, used_default)`` contract:
+
+      * Neither port carries a mass flow rate, and ``work_given`` is not
+        None -> mass is DERIVED from ``work_given / w_eff`` instead of
+        falling back to the 1 kg/s guess (and without that fallback's
+        warning -- a real value was available, just not on a port).
+      * A mass flow rate IS already resolvable from the ports -> that value
+        is authoritative; ``work_given``, if supplied, is only checked for
+        consistency against the work it implies, exactly like the existing
+        "both In.H and Out.H known" branches check enthalpy consistency.
+    """
+    both_missing = In.Mass_flowrate is None and Out.Mass_flowrate is None
+
+    if work_given is not None and both_missing:
+        if abs(w_eff) < 1e-9:
+            raise ValueError(
+                f"{component.ID}: cannot derive a mass flow rate from "
+                f"work={work_given:.2f} W -- the solved state pair implies "
+                f"~zero specific work."
+            )
+        mass = work_given / w_eff
+        if mass <= 0:
+            raise ValueError(
+                f"{component.ID}: work={work_given:.2f} W implies a "
+                f"non-positive mass flow rate ({mass:.6g} kg/s) for the "
+                f"solved state pair. Check the sign of `work` against the "
+                f"device (turbine work is positive OUT; pump/compressor "
+                f"work is positive IN)."
+            )
+        return mass, False
+
+    mass, used_default = component._resolve_mass_flowrate(In, Out)
+
+    if work_given is not None and not used_default:
+        expected = mass * w_eff
+        rel_err = abs(work_given - expected) / max(abs(expected), 1.0)
+        if rel_err > 1e-3:
+            warnings.warn(
+                f"{component.ID}: supplied work={work_given:.2f} W is "
+                f"inconsistent with the mass flow resolved from the state "
+                f"points ({mass:.6g} kg/s implies {expected:.2f} W, "
+                f"{rel_err:.2%} difference). The port-resolved mass flow "
+                f"is used as-is; `work` is not re-applied.",
+                UserWarning, stacklevel=3
+            )
+
+    return mass, used_default
+
+
 def _propagate_mass(component, mass, used_default=False):
     """
     Write the resolved mass flow onto both ports of a single-stream machine.
@@ -99,24 +162,22 @@ def _warn_consistency(component_id, h_in, h_out, h_isen, n_isen, kind):
 class Turbine(Component):
 
     def __init__(self, Model, ID, In_state, Out_state,
-                 n_isen=1.0, n_mech=1.0, Calculate=False):
+                 n_isen=1.0, n_mech=1.0, work=None, Calculate=False):
         self.In_state  = In_state
         self.Out_state = Out_state
         self.n_isen = n_isen
         self.n_mech = n_mech
         self.work   = 0.0
+        # The constructor's target work, if any -- kept separate from
+        # self.work (which Cal() always overwrites with the solved output)
+        # so a Solve() round-robin can check it on every call regardless of
+        # what the previous iteration computed.
+        self._work_given = work
         super().__init__(Model, ID, Calculate)
 
     def Cal(self):
         self.In  = self.Model.Point[self.In_state]
         self.Out = self.Model.Point[self.Out_state]
-
-        # Resolve the mass flow for this component.  A straight-through
-        # machine has one stream, so inlet and outlet always carry the same
-        # flow — we do NOT need the model-wide propagation graph to know that.
-        # Using `or` here would treat a legitimate 0.0 kg/s as missing, so the
-        # test is explicit.
-        mass, used_default = self._resolve_mass_flowrate(self.In, self.Out)
 
         if self.Out.H is None and self.In.H is not None:
             # ---- forward: known inlet, solve outlet ----
@@ -191,10 +252,14 @@ class Turbine(Component):
                 "Provide at least one enthalpy (or a full state) to proceed."
             )
 
+        w_specific = self.In.H - self.Out.H
+        w_eff = w_specific * self.n_mech
+        mass, used_default = _resolve_mass_with_target_work(
+            self, self.In, self.Out, self._work_given, w_eff)
+
         _propagate_mass(self, mass, used_default)
 
-        w_specific = self.In.H - self.Out.H
-        self.work  = (w_specific * mass * self.n_mech) if mass is not None else None
+        self.work  = (w_eff * mass) if mass is not None else None
 
         try:
             self.Ex_D = self.In.Ex - self.Out.Ex - self.work
@@ -257,25 +322,19 @@ class Compressor(Component):
     """
 
     def __init__(self, Model, ID, In_state, Out_state,
-                 n_isen=1.0, n_mech=1.0, Calculate=False):
+                 n_isen=1.0, n_mech=1.0, work=None, Calculate=False):
         self.In_state  = In_state
         self.Out_state = Out_state
         self.n_isen = n_isen
         self.n_mech = n_mech
         self.work   = 0.0
+        self._work_given = work
         self.pressure_ratio = None
         super().__init__(Model, ID, Calculate)
 
     def Cal(self):
         self.In  = self.Model.Point[self.In_state]
         self.Out = self.Model.Point[self.Out_state]
-
-        # Resolve the mass flow for this component.  A straight-through
-        # machine has one stream, so inlet and outlet always carry the same
-        # flow — we do NOT need the model-wide propagation graph to know that.
-        # Using `or` here would treat a legitimate 0.0 kg/s as missing, so the
-        # test is explicit.
-        mass, used_default = self._resolve_mass_flowrate(self.In, self.Out)
 
         if self.Out.H is None and self.In.H is not None:
             # ---- forward: known inlet, solve outlet ----
@@ -349,10 +408,14 @@ class Compressor(Component):
                 f"{self.ID}: cannot solve — both In.H and Out.H are None."
             )
 
+        w_specific = self.Out.H - self.In.H
+        w_eff = w_specific / self.n_mech
+        mass, used_default = _resolve_mass_with_target_work(
+            self, self.In, self.Out, self._work_given, w_eff)
+
         _propagate_mass(self, mass, used_default)
 
-        w_specific = self.Out.H - self.In.H
-        self.work = (w_specific * mass / self.n_mech) if mass is not None else None
+        self.work = (w_eff * mass) if mass is not None else None
         self.pressure_ratio = self.Out.P / self.In.P
 
         try:
@@ -397,12 +460,13 @@ class Pump(Component):
 
     def __init__(self, Model, ID, In_state, Out_state,
                  Compressibility='Compressible',
-                 n_isen=1.0, n_mech=1.0, Calculate=False):
+                 n_isen=1.0, n_mech=1.0, work=None, Calculate=False):
         self.In_state  = In_state
         self.Out_state = Out_state
         self.n_isen = n_isen
         self.n_mech = n_mech
         self.work   = 0.0
+        self._work_given = work
         self.Compressibility = Compressibility
         super().__init__(Model, ID, Calculate)
 
@@ -559,13 +623,6 @@ class Pump(Component):
         self.In  = self.Model.Point[self.In_state]
         self.Out = self.Model.Point[self.Out_state]
 
-        # Resolve the mass flow for this component.  A straight-through
-        # machine has one stream, so inlet and outlet always carry the same
-        # flow — we do NOT need the model-wide propagation graph to know that.
-        # Using `or` here would treat a legitimate 0.0 kg/s as missing, so the
-        # test is explicit.
-        mass, used_default = self._resolve_mass_flowrate(self.In, self.Out)
-
         if self.Compressibility == 'Compressible':
             w_specific = self._solve_compressible()
         elif self.Compressibility == 'Incompressible':
@@ -576,10 +633,14 @@ class Pump(Component):
                 "Use 'Compressible' or 'Incompressible'."
             )
 
+        w_eff = w_specific / self.n_mech
+        mass, used_default = _resolve_mass_with_target_work(
+            self, self.In, self.Out, self._work_given, w_eff)
+
         _propagate_mass(self, mass, used_default)
 
         try:
-            self.work = (w_specific * mass / self.n_mech) if mass is not None else None
+            self.work = (w_eff * mass) if mass is not None else None
             self.Ex_D = self.work + self.In.Ex - self.Out.Ex
         except Exception:
             self.Ex_D = "Not Calculated"
