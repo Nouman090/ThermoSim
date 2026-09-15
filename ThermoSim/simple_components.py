@@ -6,6 +6,7 @@ Source, Sink, Mixer, Splitter, Separator, Pipe, Expansion_valve
 
 import warnings
 from .base_component import Component
+from .nh3h2o import NH3H2OFluid
 
 
 # ================================================================== #
@@ -524,24 +525,46 @@ class Separator(Component):
                 pt.P = P
 
         # ── Tier 2: Propagate saturated outlet states ──────────────────────
-        # The saturated vapour (Q=1) and liquid (Q=0) enthalpies at pressure
-        # P are uniquely determined by P alone — no mass flow needed.
-        # We pre-populate the outlet points so downstream components can
-        # read their thermodynamic properties immediately.
-        vap_probe = self.Model.Prop(
-            self.In.fluid, StatePointName="_sep_vap_probe", P=P, Q=1.0
-        )
-        liq_probe = self.Model.Prop(
-            self.In.fluid, StatePointName="_sep_liq_probe", P=P, Q=0.0
-        )
-        h_vap_sat = vap_probe.H
-        h_liq_sat = liq_probe.H
-
-        # Write saturation enthalpies into outlet points if not yet set
-        if self.Out_vap.H is None:
-            self.Out_vap.H = h_vap_sat
-        if self.Out_liq.H is None:
-            self.Out_liq.H = h_liq_sat
+        # For a single-component fluid the saturated vapour (Q=1) and liquid
+        # (Q=0) enthalpies at pressure P are uniquely determined by P alone,
+        # independent of the inlet's actual quality — so they can be
+        # pre-populated before the inlet is even fully flashed.
+        #
+        # That shortcut does NOT hold for an NH3-H2O mixture: "Q=1 at P for
+        # the FEED composition z" is the dew point of z at P, a different
+        # point on the envelope than the vapour phase actually coexisting
+        # with the liquid at the real flash temperature. The correct
+        # outlet compositions are the equilibrium x/y the flash already
+        # computed on the inlet (Prop._calc_nh3h2o populates In.x/In.y), so
+        # for a mixture this pre-population needs the inlet already flashed
+        # and is skipped otherwise (Tier 3 below then does it once inlet
+        # data is available).
+        is_mixture = isinstance(self.In.fluid, NH3H2OFluid)
+        if is_mixture:
+            if self.In.x is not None and self.In.y is not None:
+                vap_probe = self.Model.Prop(
+                    NH3H2OFluid(self.In.y),
+                    StatePointName="_sep_vap_probe", P=P, T=self.In.T
+                )
+                liq_probe = self.Model.Prop(
+                    NH3H2OFluid(self.In.x),
+                    StatePointName="_sep_liq_probe", P=P, T=self.In.T
+                )
+                if self.Out_vap.H is None:
+                    self.Out_vap.H = vap_probe.H
+                if self.Out_liq.H is None:
+                    self.Out_liq.H = liq_probe.H
+        else:
+            vap_probe = self.Model.Prop(
+                self.In.fluid, StatePointName="_sep_vap_probe", P=P, Q=1.0
+            )
+            liq_probe = self.Model.Prop(
+                self.In.fluid, StatePointName="_sep_liq_probe", P=P, Q=0.0
+            )
+            if self.Out_vap.H is None:
+                self.Out_vap.H = vap_probe.H
+            if self.Out_liq.H is None:
+                self.Out_liq.H = liq_probe.H
 
         # ── Tier 3: Mass-flow split (requires inlet quality) ──────────────
         # Quality Q is computable only when the inlet enthalpy H is known.
@@ -597,19 +620,39 @@ class Separator(Component):
         m_vap = m_total * quality
         m_liq = m_total * (1.0 - quality)
 
-        # Fully-specified outlet states
-        self.Out_vap = self.Model.Prop(
-            self.In.fluid,
-            StatePointName=self.Out_vap_state,
-            P=P, Q=1.0,
-            Mass_flowrate=m_vap
-        )
-        self.Out_liq = self.Model.Prop(
-            self.In.fluid,
-            StatePointName=self.Out_liq_state,
-            P=P, Q=0.0,
-            Mass_flowrate=m_liq
-        )
+        # Fully-specified outlet states.
+        # Mixture: tag each outlet with its own equilibrium composition
+        # (In.x/In.y, populated by the inlet's flash) rather than the feed
+        # composition — see the Tier 2 note above for why. Flashing at the
+        # inlet's own (P, T) lands exactly on that composition's saturated
+        # boundary (Q=0 for x, Q=1 for y), which is the correct vapour/
+        # liquid outlet state.
+        if is_mixture:
+            self.Out_vap = self.Model.Prop(
+                NH3H2OFluid(self.In.y),
+                StatePointName=self.Out_vap_state,
+                P=P, T=self.In.T,
+                Mass_flowrate=m_vap
+            )
+            self.Out_liq = self.Model.Prop(
+                NH3H2OFluid(self.In.x),
+                StatePointName=self.Out_liq_state,
+                P=P, T=self.In.T,
+                Mass_flowrate=m_liq
+            )
+        else:
+            self.Out_vap = self.Model.Prop(
+                self.In.fluid,
+                StatePointName=self.Out_vap_state,
+                P=P, Q=1.0,
+                Mass_flowrate=m_vap
+            )
+            self.Out_liq = self.Model.Prop(
+                self.In.fluid,
+                StatePointName=self.Out_liq_state,
+                P=P, Q=0.0,
+                Mass_flowrate=m_liq
+            )
 
         # Energy balance sanity check
         h_in = self.In.H
