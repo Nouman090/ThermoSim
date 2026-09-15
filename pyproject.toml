@@ -27,6 +27,7 @@ dependencies = [
     "numpy",
     "pandas",
     "tabulate",
+    "sympy",
 ]
 
 [project.optional-dependencies]

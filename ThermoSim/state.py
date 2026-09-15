@@ -28,6 +28,8 @@ import numpy as np
 import CoolProp.CoolProp as CP
 
 from . import config                       # reads dead_states from config.py
+from . import nh3h2o as _aw
+from .nh3h2o import NH3H2OFluid, AmmoniaWaterError as _AmmoniaWaterError
 
 # Path to T66.json (sits next to this file OR in project root)
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -108,6 +110,11 @@ class Prop:
         self.Q = self.D = self.Cp = None
         self.ex = self.Ex = None
         self.phase = None
+        # NH3-H2O mixture composition: overall (z) and, inside the
+        # two-phase dome, the coexisting liquid (x) / vapor (y) compositions.
+        # None for every other fluid type.
+        self.z = fluid.z if isinstance(fluid, NH3H2OFluid) else None
+        self.x = self.y = None
 
         # set the properties we already know
         for key, value in self.properties.items():
@@ -115,7 +122,9 @@ class Prop:
 
         # --- calculate the rest -----------------------------------------
         if len(self.properties) == 2:
-            if self._is_therminol66(self.fluid):
+            if self._is_nh3h2o(self.fluid):
+                self._calc_nh3h2o()
+            elif self._is_therminol66(self.fluid):
                 self._calc_therminol66()
             else:
                 self._calc_coolprop()
@@ -188,7 +197,10 @@ class Prop:
         elif name in _EXERGY_INPUTS:
             # Only Mass_flowrate or DeadStates changed — re-run exergy only.
             if self.__dict__.get('Solution_Status'):
-                self._calc_exergy()
+                if self._is_nh3h2o(self.__dict__.get('fluid')):
+                    self._calc_exergy_nh3h2o()
+                else:
+                    self._calc_exergy()
 
             # If a flow-propagation network has been registered AND this is
             # a Mass_flowrate change (not DeadStates), propagate downstream.
@@ -485,11 +497,108 @@ class Prop:
         """True when `fluid` names the built-in Therminol-66 correlation."""
         return isinstance(fluid, str) and fluid.strip().lower() in _T66_ALIASES
 
+    @staticmethod
+    def _is_nh3h2o(fluid):
+        """True when `fluid` is an NH3H2OFluid (binary mixture) tag."""
+        return isinstance(fluid, NH3H2OFluid)
+
     def calculate_missing_properties(self):
-        if self._is_therminol66(self.fluid):
+        if self._is_nh3h2o(self.fluid):
+            self._calc_nh3h2o()
+        elif self._is_therminol66(self.fluid):
             self._calc_therminol66()
         else:
             self._calc_coolprop()
+
+    # ------------------------------------------------------------------ #
+    #  NH3-H2O mixture calculation
+    # ------------------------------------------------------------------ #
+    def _calc_nh3h2o(self):
+        """
+        Flash an NH3-H2O state via ``nh3h2o.py`` and translate between
+        ThermoSim's SI unit convention and the library's own (P in bar,
+        H/S/U in kJ/kg[/K]). T, Q and density (v = 1/D, both already SI
+        m3/kg <-> kg/m3) need no conversion.
+
+        Composition is carried on ``self.fluid`` (an ``NH3H2OFluid``), not
+        on ``self.properties`` -- the two thermodynamic inputs here are
+        exactly the two keys already validated by ``_VALID_PROPS``.
+        """
+        prop1, prop2 = list(self.properties.keys())
+        val1, val2 = list(self.properties.values())
+
+        _TO_AW = {
+            'P': lambda v: v / 1e5,
+            'H': lambda v: v / 1e3,
+            'S': lambda v: v / 1e3,
+            'T': lambda v: v,
+            'Q': lambda v: v,
+            'D': lambda v: v,
+        }
+        kwargs = {prop1: _TO_AW[prop1](val1), prop2: _TO_AW[prop2](val2)}
+
+        object.__setattr__(self, '_initialising', True)
+        try:
+            try:
+                st = _aw.state(z=self.fluid.z, **kwargs)
+            except _AmmoniaWaterError as e:
+                raise ValueError(
+                    f"NH3-H2O flash error for state '{self.StatePointName}': {e}"
+                )
+
+            object.__setattr__(self, 'P', st.P * 1e5)
+            object.__setattr__(self, 'T', st.T)
+            object.__setattr__(self, 'H', st.h * 1e3)
+            object.__setattr__(self, 'S', st.s * 1e3)
+            object.__setattr__(self, 'D', 1.0 / st.v)
+            object.__setattr__(self, 'z', st.z)
+
+            if st.phase == 'two-phase':
+                object.__setattr__(self, 'Q', st.Q)
+                object.__setattr__(self, 'x', st.x)
+                object.__setattr__(self, 'y', st.y)
+                object.__setattr__(
+                    self, 'phase', f"Two-phase (Q={st.Q:.4f})")
+            else:
+                object.__setattr__(self, 'Q', None)
+                object.__setattr__(self, 'x', st.z)
+                object.__setattr__(self, 'y', st.z)
+                label = 'Liquid solution' if st.phase == 'liquid' else 'Vapor'
+                object.__setattr__(self, 'phase', label)
+
+            # Cp is not provided by nh3h2o.py (no cp field on State); left
+            # None, matching every other attribute this library doesn't
+            # compute rather than silently guessing at it.
+            object.__setattr__(self, 'Cp', None)
+
+            self._calc_exergy_nh3h2o()
+
+            object.__setattr__(self, 'Solution_Status', True)
+        finally:
+            object.__setattr__(self, '_initialising', False)
+
+    def _calc_exergy_nh3h2o(self):
+        """Specific/total flow exergy for an NH3-H2O state, mirroring
+        ``_calc_exergy`` but flashing the dead state through ``nh3h2o.py``
+        (with the SAME overall composition) instead of CoolProp."""
+        if not self.DeadStates or self.H is None or self.S is None:
+            object.__setattr__(self, 'ex', None)
+            object.__setattr__(self, 'Ex', None)
+            return
+        T0 = self.DeadStates['T0']
+        P0 = self.DeadStates['P0']
+        try:
+            st0 = _aw.state(z=self.fluid.z, T=T0, P=P0 / 1e5, warn=False)
+            h0, s0 = st0.h * 1e3, st0.s * 1e3
+        except _AmmoniaWaterError:
+            object.__setattr__(self, 'ex', None)
+            object.__setattr__(self, 'Ex', None)
+            return
+
+        ex = (self.H - h0) - T0 * (self.S - s0)
+        Ex = self.Mass_flowrate * ex if self.Mass_flowrate else None
+        object.__setattr__(self, 'ex', ex)
+        object.__setattr__(self, 'Ex', Ex)
 
     # ------------------------------------------------------------------ #
     #  pretty printing
