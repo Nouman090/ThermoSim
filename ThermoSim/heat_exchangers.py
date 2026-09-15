@@ -768,16 +768,20 @@ class HeatExchanger(Component):
                     return _res_cth(Q_c, mh_, mc)
                 except Exception:
                     return _PENALTY * sign_factor  # large penalty if state point is invalid
-            H_lo = self._min_H(HI)
+            # The bracket's lower end must stay strictly above HO.H:
+            # mh_ = Q_c/(H_hi-HO.H) has a pole there, and mh_ is only
+            # physically valid (mh_ > 0 — the hot stream must cool from
+            # inlet to outlet) for H_hi > HO.H. A bracket that starts below
+            # HO.H straddles that pole; brentq can then converge on a
+            # spurious root on the wrong side where a NEGATIVE "mass flow"
+            # still zeroes the residual arithmetically (v3.2.1-v3.3.0 did
+            # this silently — no exception, no warning, just a physically
+            # invalid Hot_Mass_flowrate < 0).
+            H_lo = max(self._min_H(HI), HO.H + 1e-3)
             H_hi_bound = self.Model.Prop(HI.fluid, StatePointName='_hi_bound', T=_safe_T_max(HI.fluid, HI.P), P=HI.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
-                try:
-                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
-                except Exception:
-                    _H_lo = HO.H + 1e-3
-                    sign_factor = _fun_sign_fac(f,_H_lo,H_hi_bound)
-                    H_sol = brentq(f, _H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -796,22 +800,23 @@ class HeatExchanger(Component):
                     return _res_htc(Q_c, mh_, mc)
                 except Exception:
                     return _PENALTY * sign_factor
+            # Mirror of the {H_hi, mh} fix above: mh_ = Q_c/(HI.H-H_ho) has
+            # its pole at H_ho = HI.H, and mh_ is only physically valid
+            # (mh_ > 0) for H_ho < HI.H, so the bracket's upper end must
+            # stay strictly below HI.H rather than spanning past it.
             H_lo = self._min_H(HO, T_floor=CI.T if CI is not None else None)
-            H_hi_bound = self.Model.Prop(HO.fluid, StatePointName='_ho_hi', T=_safe_T_max(HO.fluid, HO.P), P=HO.P).H-1e-3
+            H_hi_bound = min(
+                self.Model.Prop(HO.fluid, StatePointName='_ho_hi', T=_safe_T_max(HO.fluid, HO.P), P=HO.P).H-1e-3,
+                HI.H - 1e-3)
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
-                try:
-                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
-                except Exception:
-                    _H_hi_bound = HI.H-1e-3
-                    sign_factor = _fun_sign_fac(f,H_lo,_H_hi_bound)
-                    H_sol = brentq(f, H_lo, _H_hi_bound, xtol=1e-4, rtol=1e-4)
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
                     print(f"[{self.ID}] robust solver found H_sol={H_sol:.2f} J/kg")
-            
-            mh_sol = Q_c / (HI.H - H_sol)   
+
+            mh_sol = Q_c / (HI.H - H_sol)
             self.Hot_Out = _h_from_H(mdl, HO.fluid, HO.StatePointName, H_sol, HO.P, mh_sol)
             self._writeback_mflow_hot(mh_sol)
             return
@@ -825,21 +830,22 @@ class HeatExchanger(Component):
                     return _res_htc(Q_h, mh, mc)
                 except Exception:
                     return _PENALTY * sign_factor  # large penalty if state point is invalid
+            # mc = Q_h/(CO.H-H_ci) has its pole at H_ci = CO.H, and mc is
+            # only physically valid (mc > 0 — the cold stream must heat
+            # from inlet to outlet) for H_ci < CO.H, so the bracket's upper
+            # end must stay strictly below CO.H (same pole-avoidance fix
+            # as {H_hi,mh}/{H_ho,mh} above).
             H_lo = self._min_H(CI)
-            H_hi_bound = self.Model.Prop(CI.fluid, StatePointName='_ci_hi', T=_safe_T_max(CI.fluid, CI.P), P=CI.P).H-1e-3
+            H_hi_bound = min(
+                self.Model.Prop(CI.fluid, StatePointName='_ci_hi', T=_safe_T_max(CI.fluid, CI.P), P=CI.P).H-1e-3,
+                CO.H - 1e-3)
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
-                try:
-                    H_ci = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
-                except Exception:
-                    _H_hi_bound = CO.H-1e-3
-                    sign_factor = _fun_sign_fac(f,H_lo,_H_hi_bound)
-                    H_ci = brentq(f, H_lo, _H_hi_bound, xtol=1e-4, rtol=1e-4)
-
+                H_ci = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
             except Exception:
                 H_ci = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
-                    print(f"[{self.ID}] robust solver found H_ci={H_sol:.2f} J/kg")
+                    print(f"[{self.ID}] robust solver found H_ci={H_ci:.2f} J/kg")
 
             mc = Q_h/(CO.H - H_ci)
             self.Cold_In = _h_from_H(mdl, CI.fluid, CI.StatePointName, H_ci, CI.P, mc)
