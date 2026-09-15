@@ -449,8 +449,11 @@ class ThermodynamicModel:
             condition: when True (default) a 'Condition' column is derived
                 from ``phase``.  ``Q`` is numeric only inside the saturation
                 dome and NaN outside it, so this column carries the label
-                -- 'Superheated', 'Sub-cooled', 'Saturated liquid' -- that
-                ``Q`` used to be overwritten with before 3.2.2.
+                -- 'Superheated (12.34 K)', 'Sub-cooled (5.00 K)', 'Saturated
+                liquid' -- that ``Q`` used to be overwritten with before
+                3.2.2. The degree of superheat/subcooling is included, not
+                stripped, so e.g. two superheated points are distinguishable
+                without reading a separate column.
         """
         default = ['fluid', 'Mass_flowrate', 'StatePointName',
                     'P', 'T', 'H', 'Q']
@@ -471,9 +474,9 @@ class ThermodynamicModel:
         ]
         full = pd.DataFrame(rows)
 
-        # 'Condition' is the short form of 'phase' with the numeric margin
-        # stripped: 'Superheated (184.99 K)' -> 'Superheated'.  The full
-        # label stays available in the 'phase' column.
+        # 'Condition' mirrors 'phase' (including its degree of superheat/
+        # subcooling, e.g. 'Superheated (184.99 K)'), with an unsolved
+        # point's None shown as 'Unsolved' instead.
         if 'phase' in full.columns:
             full['Condition'] = full['phase'].map(self._short_phase)
 
@@ -490,10 +493,11 @@ class ThermodynamicModel:
 
     @staticmethod
     def _short_phase(label):
-        """'Superheated (184.99 K)' -> 'Superheated'; None -> 'Unsolved'."""
+        """None -> 'Unsolved'; every other label (e.g. 'Superheated
+        (184.99 K)') is passed through unchanged."""
         if label is None:
             return 'Unsolved'
-        return str(label).split('(')[0].strip()
+        return str(label)
 
     # ---------------------------------------------------------- #
     #  pretty-print components

@@ -101,6 +101,18 @@ class TestModelSummary:
         df = M.Point_print()
         assert len(df) == 4     # 4 state points
 
+    def test_point_print_condition_includes_temperature_margin(self):
+        """'Condition' must show the degree of superheat/subcooling, not
+        just the bare 'Superheated'/'Sub-cooled' label."""
+        M = ThermodynamicModel()
+        M.add_point('water', 'sub', P=1e6, T=400.0)
+        M.add_point('water', 'super', P=1e6, T=500.0)
+        df = M.Point_print(header=['StatePointName', 'Condition'])
+        sub_cond = df.loc[df.StatePointName == 'sub', 'Condition'].iloc[0]
+        super_cond = df.loc[df.StatePointName == 'super', 'Condition'].iloc[0]
+        assert sub_cond.startswith('Sub-cooled (') and sub_cond.endswith('K)')
+        assert super_cond.startswith('Superheated (') and super_cond.endswith('K)')
+
 
 class TestSaveLoad:
 
