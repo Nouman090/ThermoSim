@@ -24,7 +24,7 @@ fig, axes = plt.subplots(1, 2, figsize=(9.6, 3.9),
 ax = axes[0]
 x = np.arange(len(labels)); w = 0.36
 ax.bar(x-w/2, e_ts, w, label='ThermoSim', color='#1f6fb4')
-ax.bar(x+w/2, e_ip, w, label='IPSEpro (Ref. [11])', color='#c0392b')
+ax.bar(x+w/2, e_ip, w, label='IPSEpro (Ref. [12])', color='#c0392b')
 ax.axhline(0, color='#333', lw=1.0)
 for xi, v in zip(x-w/2, e_ts):
     ax.text(xi, v + (0.12 if v>=0 else -0.28), f'{v:+.2f}', ha='center',
@@ -43,7 +43,7 @@ ax.set_ylim(-2, 3)
 ax = axes[1]
 res = []
 for P, tag, col in ((16.00e5,'plant  16.00 bar','#1f6fb4'),
-                    (16.95e5,'fitted 16.95 bar (Ref. [11]])','#c0392b')):
+                    (16.95e5,'fitted 16.95 bar (Ref. [12]])','#c0392b')):
     V.P_EVAP = P
     Mx = V.build()
     p = CyclePlotter(Mx)
