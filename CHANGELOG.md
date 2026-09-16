@@ -1,5 +1,79 @@
 
 # Changelog
+## [3.4.0] - 2026-09-16
+
+### Added
+- **NH3-H2O mixture support, for absorption-cycle modelling.** A new
+  `NH3H2OFluid(z)` class (in `ThermoSim/nh3h2o.py`, which vendors a
+  standalone Ziegler-Trepp Gibbs-excess property library) can be passed
+  anywhere ThermoSim expects a CoolProp fluid name, e.g.
+  `Model.add_point(NH3H2OFluid(0.4), 'S1', P=..., T=...)`. `Prop` dispatches
+  on it the same way it already dispatches on the Therminol-66 fluid-name
+  aliases, routing property calculations through `nh3h2o.py` instead of
+  CoolProp (with the SI unit conversion — Pa↔bar, J/kg↔kJ/kg — handled
+  internally) and exposing the equilibrium liquid/vapor compositions `x`/`y`
+  alongside the usual `P, T, H, S, Q`.
+
+  Composition is bundled into the fluid identifier itself rather than
+  threaded through as a separate parameter, specifically so every existing
+  component that forwards `self.In.fluid` unchanged — `Pump`, `Turbine`,
+  `Compressor`, `Expansion_valve`, `Mixer`, and the `HeatExchanger` flash
+  helpers — works with a mixture stream with **no changes to their own
+  logic**. `Separator` is the one exception: it used to reuse the inlet's
+  fluid unchanged for both outlets (correct for a single-component fluid,
+  where saturated vapor/liquid at a given P is one well-defined state
+  regardless of quality). For a mixture that outlet composition needs to be
+  the equilibrium `x`/`y` the inlet's own flash already computed, not the
+  feed composition — `Separator` now branches on this.
+
+  `HeatExchanger`'s general pinch-based solver (`double_pipe`/`Condenser`/
+  `Evaporator`) is also mixture-aware, including its 2- and 3-unknown
+  cases: `_safe_T_min`/the new `_safe_T_max` and `_phase_boundary_alphas`
+  dispatch to `nh3h2o` for an `NH3H2OFluid` stream instead of calling
+  CoolProp directly, so the reported pinch correctly accounts for NH3-H2O's
+  temperature glide across its two-phase dome rather than assuming a flat
+  saturation point. `SimpleHEX` needed no changes — it only goes through
+  `Model.Prop`, already mixture-aware.
+
+  A validated worked example, `validation/validate_nh3h2o_chiller.py`,
+  builds a single-effect NH3-H2O absorption chiller entirely from
+  `Pump`/`Expansion_valve`/`Mixer`/`Separator`/`HeatExchanger(SimpleHEX)`
+  and matches an independent reference calculation's `Q_gen`, `Q_cond`,
+  `Q_evap`, `Q_abs`, `W_pump` and `COP` to within 0.01%. The rectifier
+  stays a fixed-purity assumption rather than a modelled multi-stage
+  column; a Kalina-cycle model is future work on the same foundation.
+
+- **`Turbine`/`Compressor`/`Pump` accept a `work=` argument**, mirroring
+  how `HeatExchanger`'s `Q` already works: if neither port carries a mass
+  flow rate, `work` is used to derive it (`mass = work / specific_work`)
+  instead of falling back to the 1 kg/s guess; if a mass flow rate *is*
+  resolvable from the ports, `work` is only checked for consistency and
+  never overrides it. A `work` value whose sign implies a non-positive mass
+  flow (e.g. negative work on a compressor) raises immediately rather than
+  propagating a nonsensical flow rate.
+
+### Fixed
+- **A 2-unknown `HeatExchanger` case could converge on a physically
+  invalid negative mass flow rate.** The `{H_hi,mh}`, `{H_ho,mh}` and
+  `{H_ci,mc}` cases in `_solve_2_unknown` each solve for a free enthalpy
+  `H_x` via `mass_ = Q/(H_x - H_fixed)`, which has a pole at
+  `H_x == H_fixed`: `mass_` is physically valid (positive) strictly on one
+  side of it and negative on the other. The bracket handed to `brentq`
+  spanned straight across that pole, so it could converge on the
+  unphysical side — silently returning a negative `Hot_Mass_flowrate` (or
+  `Cold_Mass_flowrate`) that still zeroed the residual arithmetically, with
+  `min_dT` still reporting exactly `PPT` and nothing downstream flagging it
+  as wrong. Reproduces with a plain CoolProp fluid, so this predates and is
+  unrelated to the NH3-H2O work above. Fixed by tightening each bracket to
+  the physical side of its own pole; a target `PPT` that is genuinely
+  unreachable now raises instead of returning a wrong answer.
+- **`Point_print`'s `Condition` column dropped the degree of
+  superheat/subcooling**, printing bare `Superheated`/`Sub-cooled` for
+  every point at that phase regardless of how far from saturation it
+  actually was (`Superheated (184.99 K)` was stripped down to
+  `Superheated`). The temperature margin — already computed, just
+  discarded for this column — is now shown, e.g. `Sub-cooled (5.23 K)`.
+
 ## [3.3.0] - 2026-08-29
 
 ### Added
