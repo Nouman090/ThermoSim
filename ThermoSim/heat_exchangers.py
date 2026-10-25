@@ -3,7 +3,8 @@ heat_exchangers.py
 ------------------
 Generalised HeatExchanger solver supporting:
   - 0, 1, 2, and 3 unknown variables from {H_hi, H_ho, H_ci, H_co, mh, mc}
-  - All solvable combinations via an anchor + brentq engine
+  - All solvable combinations via a brentq engine, anchored via the PPT
+    diagonal where a 3-unknown case needs the extra relation
   - HEX types: double_pipe, Condenser, Evaporator, SimpleHEX
   - TES (Thermal Energy Storage)
 
@@ -12,9 +13,16 @@ Solvability
 The authoritative reference is ``docs/HEX_Logic_Table.xlsx``; the counts below
 match its ✅/❌ columns, the CHANGELOG and ``_SOLVABLE_2_UNKNOWN`` below.
 
-  2-unknown: 10 of C(6,2) = 15 combinations are solvable.
-             Unsolvable: cases 1, 2 (same-side enthalpy pair → Q undefined),
-             8, 9 (knowns confined to one end → unreliable) and
+  2-unknown: 12 of C(6,2) = 15 combinations are solvable.
+             Cases 1, 2 (same-side enthalpy pair) looked Q-undefined at
+             first glance, but the OTHER side is fully known whenever
+             exactly these 2 are unknown, so Q is already fixed from that
+             side. Searching the unknown corner directly -- using it as
+             the marching start point itself, rather than deriving it --
+             solves them with no extra machinery, and matches a true
+             internal (phase-change) pinch rather than assuming the pinch
+             sits at an end the way an anchor would.
+             Unsolvable: 8, 9 (knowns confined to one end → unreliable) and
              15 (mh/mc ratio fixed → infinitely many solutions).
 
   3-unknown:  8 of C(6,3) = 20 combinations are solvable.
@@ -300,15 +308,21 @@ class HeatExchanger(Component):
     Calculate      : if True, call Cal() immediately on construction
     """
 
-    #: The 10 solvable 2-unknown combinations, matching the ✅ column of
-    #: HEX_Logic_Table.xlsx (sheet "2-Unknown Cases").  The five omitted
+    #: The 12 solvable 2-unknown combinations, matching the ✅ column of
+    #: HEX_Logic_Table.xlsx (sheet "2-Unknown Cases").  The three omitted
     #: combinations are genuinely unsolvable, not merely unimplemented:
-    #:   {H_hi, H_ho}  case 1  — both hot enthalpies unknown, Q undefined
-    #:   {H_ci, H_co}  case 2  — both cold enthalpies unknown, Q undefined
     #:   {H_hi, H_co}  case 8  — knowns sit at one end only; unreliable
     #:   {H_ho, H_ci}  case 9  — knowns sit at one end only; unreliable
     #:   {mh,   mc}    case 15 — mh/mc ratio is fixed → infinitely many roots
+    #:
+    #: Cases 1 ({H_hi, H_ho}) and 2 ({H_ci, H_co}) are same-side pairs: the
+    #: OTHER side is fully known whenever exactly these two are unknown, so
+    #: Q is already fixed from that side and searching the unknown corner
+    #: directly (it serves as its own marching start point) solves them --
+    #: see _solve_2_unknown.
     _SOLVABLE_2_UNKNOWN = frozenset({
+        frozenset({'H_hi', 'H_ho'}),  # case 1
+        frozenset({'H_ci', 'H_co'}),  # case 2
         frozenset({'H_hi', 'mh'}),    # case 3
         frozenset({'H_ho', 'mh'}),    # case 4
         frozenset({'H_ci', 'mc'}),    # case 5
@@ -683,12 +697,6 @@ class HeatExchanger(Component):
         
         # ── Unsolvable guards (HEX_Logic_Table.xlsx, "2-Unknown Cases") ─────
         _unsolvable = {
-            frozenset({'H_hi', 'H_ho'}):
-                "both hot-side enthalpies are unknown, so Q is undefined on "
-                "that side (case 1)",
-            frozenset({'H_ci', 'H_co'}):
-                "both cold-side enthalpies are unknown, so Q is undefined on "
-                "that side (case 2)",
             frozenset({'H_hi', 'H_co'}):
                 "the known enthalpies both sit at the hot-outlet/cold-inlet "
                 "end, so a solution may exist but is not reliable (case 8)",
@@ -1133,6 +1141,65 @@ class HeatExchanger(Component):
             Q_h = mh * (HI.H - self.Hot_Out.H)
             H_co = CI.H + Q_h / mc
             self.Cold_Out = _h_from_H(mdl, CO.fluid, CO.StatePointName, H_co, CO.P, mc)
+            return
+
+        # ════════════════════════════════════════════════════════════════════
+        # CASES: two enthalpy unknowns, same-side (cases 1, 2)
+        # ════════════════════════════════════════════════════════════════════
+        # The OTHER side is fully known whenever exactly these two are
+        # unknown, so Q is already fixed from it -- no anchor assumption
+        # about where the pinch sits is needed. Search the unknown corner
+        # directly: it IS the 'cold_to_hot' marching start point for its
+        # stream, so the derived corner falls straight out of the profile
+        # rather than needing a separate formula. Unlike the mass-flow
+        # cases above, Q here is a fixed number rather than something
+        # derived by dividing by the search variable, so there's no pole
+        # to dodge.
+
+        if unknowns == frozenset({'H_hi', 'H_ho'}):
+            Q_c = mc * (CO.H - CI.H)
+            def f(H_ho):
+                try:
+                    self.Hot_Out = _h_from_H(mdl, HO.fluid, HO.StatePointName, H_ho, HO.P, mh)
+                    return _res_cth(Q_c, mh, mc)
+                except Exception:
+                    return _PENALTY * sign_factor
+            H_lo = self._min_H(HO, T_floor=CI.T if CI is not None else None)
+            H_hi_bound = self.Model.Prop(HO.fluid, StatePointName='_ho_hi', T=_safe_T_max(HO.fluid, HO.P), P=HO.P).H - 1e-3
+            sign_factor = _fun_sign_fac(f, H_lo, H_hi_bound)
+            try:
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+            except Exception:
+                H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
+                if self.print_residual:
+                    print(f"[{self.ID}] robust solver found H_ho={H_sol:.2f} J/kg")
+
+            self.Hot_Out = _h_from_H(mdl, HO.fluid, HO.StatePointName, H_sol, HO.P, mh)
+            H_hi_sol = H_sol + Q_c / mh
+            self.Hot_In = _h_from_H(mdl, HI.fluid, HI.StatePointName, H_hi_sol, HI.P, mh)
+            return
+
+        if unknowns == frozenset({'H_ci', 'H_co'}):
+            Q_h = mh * (HI.H - HO.H)
+            def f(H_ci):
+                try:
+                    self.Cold_In = _h_from_H(mdl, CI.fluid, CI.StatePointName, H_ci, CI.P, mc)
+                    return _res_cth(Q_h, mh, mc)
+                except Exception:
+                    return _PENALTY * sign_factor
+            H_lo = self._min_H(CI)
+            H_hi_bound = self.Model.Prop(CI.fluid, StatePointName='_ci_hi', T=_safe_T_max(CI.fluid, CI.P), P=CI.P).H - 1e-3
+            sign_factor = _fun_sign_fac(f, H_lo, H_hi_bound)
+            try:
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+            except Exception:
+                H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
+                if self.print_residual:
+                    print(f"[{self.ID}] robust solver found H_ci={H_sol:.2f} J/kg")
+
+            self.Cold_In = _h_from_H(mdl, CI.fluid, CI.StatePointName, H_sol, CI.P, mc)
+            H_co_sol = H_sol + Q_h / mc
+            self.Cold_Out = _h_from_H(mdl, CO.fluid, CO.StatePointName, H_co_sol, CO.P, mc)
             return
 
         raise ValueError(

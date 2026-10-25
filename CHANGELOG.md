@@ -52,6 +52,27 @@
   flow (e.g. negative work on a compressor) raises immediately rather than
   propagating a nonsensical flow rate.
 
+- **`HeatExchanger._solve_2_unknown` now solves `{H_hi,H_ho}` and
+  `{H_ci,H_co}`** (cases 1 and 2), previously rejected outright as "Q
+  undefined on that side". Whenever exactly these two are unknown, the
+  *other* side is fully known by definition, so `Q` is already fixed from
+  it — the rejection reasoning didn't hold, it just wasn't obvious since
+  `Q` genuinely can't be found from the unknown side alone.
+
+  Solved by searching the unknown corner directly: for `{H_hi,H_ho}`,
+  `H_ho` is searched because it's already the `'cold_to_hot'` marching
+  start point for the hot stream, so `H_hi` falls out of the profile via
+  the known `Q` rather than needing a separate formula (mirror for
+  `{H_ci,H_co}` via `H_ci`). This makes no assumption about where the
+  pinch sits — unlike the `Condenser`/`Evaporator` PPT-diagonal anchor,
+  it's verified correct even when the unknown stream crosses its
+  saturation dome and the true pinch sits inside the unit, not at either
+  end. Verified against `double_pipe`, `Condenser` and `Evaporator`,
+  mixed fluids on each side, an NH3-H2O mixture, and PPT down to 0.5 K.
+  `_SOLVABLE_2_UNKNOWN` goes from 10 to 12 of the 15 combinations; cases
+  8, 9 and 15 remain genuinely unsolvable. New tests in
+  `tests/test_heat_exchanger_same_side_pair.py`.
+
 ### Fixed
 - **A 2-unknown `HeatExchanger` case could converge on a physically
   invalid negative mass flow rate.** The `{H_hi,mh}`, `{H_ho,mh}` and
