@@ -1262,8 +1262,8 @@ class HeatExchanger(Component):
                 # inlet stays BELOW the cold outlet, otherwise the HEX would
                 # be driven to the unphysical state T_co < T_ci.
                 T_ho = _require_T(HO, 'hot-outlet')
-                T_co = _require_T(CO, 'cold-outlet')
-                if T_ho - self.PPT >= T_co:
+                T_co = CO.T if (CO is not None and CO.T is not None) else None
+                if T_co is not None and T_ho - self.PPT >= T_co:
                     raise ValueError(
                         f"[{self.ID}] Cannot anchor H_ho → H_ci: it would set "
                         f"T_ci = {T_ho - self.PPT - 273.15:.2f} °C, which is not "
@@ -1296,8 +1296,8 @@ class HeatExchanger(Component):
                 # (v3.2.1 reused the *hot-outlet vs cold-outlet* test from the
                 # branch above here, which tests the wrong pair entirely.)
                 T_co = _require_T(CO, 'cold-outlet')
-                T_ho = _require_T(HO, 'hot-outlet')
-                if T_co + self.PPT <= T_ho:
+                T_ho = HO.T if (HO is not None and HO.T is not None) else None
+                if T_ho is not None and T_co + self.PPT <= T_ho:
                     raise ValueError(
                         f"[{self.ID}] Cannot anchor H_co → H_hi: it would set "
                         f"T_hi = {T_co + self.PPT - 273.15:.2f} °C, which is not "
