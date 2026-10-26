@@ -74,6 +74,33 @@
   `tests/test_heat_exchanger_same_side_pair.py`.
 
 ### Fixed
+- **`Evaporator`/`Condenser` refused four 3-unknown combinations that
+  were already solvable in principle.** `{H_hi,H_ho,mh}` and
+  `{H_hi,H_ho,mc}` on an `Evaporator`, and `{H_ci,H_co,mh}` and
+  `{H_ci,H_co,mc}` on a `Condenser`, each have exactly one viable
+  anchor for that type (`H_co → H_hi` and `H_ho → H_ci` respectively).
+  Both of those anchors sanity-check the *opposite* corner's
+  temperature before accepting the anchor — but for these combinations
+  that corner is itself one of the three unknowns, not resolved until
+  the remaining 2-unknown solve runs afterward. The check demanded a
+  temperature that couldn't exist yet, so `_apply_anchor` raised
+  "temperature is unknown" every time, even though the remaining
+  2-unknown case was already solvable on its own. `double_pipe` was
+  never affected: for these same combinations it has an alternate,
+  unaffected anchor (`H_ci → H_ho` / `H_hi → H_co`) that the anchor
+  list tries first, so the overall "8 of 20" 3-unknown count was never
+  wrong — only `Evaporator` and `Condenser`'s own narrower anchor sets
+  were artificially more restrictive than they needed to be.
+
+  Found and patched externally ([h/t the reporter's own benchmark and
+  `anchor_sanity_check.patch`]); fixed by only enforcing the ordering
+  check when the opposite corner's temperature is already known,
+  deferring to the pinch and energy-balance checks that already run on
+  every solve otherwise. Verified all four combinations now solve
+  correctly (matching energy balance and the requested `PPT` on a
+  self-consistent reference state) for both types, and that genuinely
+  unsolvable combinations are unaffected. New tests in
+  `tests/test_heat_exchanger_3unknown_anchor_sanity.py`.
 - **A 2-unknown `HeatExchanger` case could converge on a physically
   invalid negative mass flow rate.** The `{H_hi,mh}`, `{H_ho,mh}` and
   `{H_ci,mc}` cases in `_solve_2_unknown` each solve for a free enthalpy
