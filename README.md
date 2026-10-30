@@ -2,7 +2,7 @@
 ![tests](https://github.com/Nouman090/ThermoSim/actions/workflows/tests.yml/badge.svg)
 # ThermoSim
 
-![ThermoSim logo](https://github.com/Nouman090/ThermoSim/blob/main/docs/ThermoSim%20Logo%202.jpg?raw=true)
+![ThermoSim logo](https://github.com/Nouman090/ThermoSim/blob/main/docs/ThermoSim%20Logo.jpg?raw=true)
 
 **ThermoSim** is a Python package for modelling and analysing thermodynamic
 power cycles, built on [CoolProp](http://www.coolprop.org/) for fluid
