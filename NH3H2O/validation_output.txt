@@ -1,0 +1,80 @@
+
+=== TEST A: pure-component limits vs reference EOS (T,P inputs) ===
+  PASS  enthalpy, mean abs deviation                              1.381 kJ/kg  (tol 6)
+  PASS  enthalpy, max abs deviation                               5.528 kJ/kg  (tol 25)
+  PASS  entropy, max abs deviation                              0.01498 kJ/kg/K  (tol 0.06)
+  PASS  specific volume, max deviation                           0.9401 %  (tol 3)
+
+=== TEST B: saturation temperature at pure limits (P,Q inputs) ===
+  PASS  bubble temperature, max error                            0.2695 K  (tol 0.35)
+  PASS  dew temperature, max error                               0.2695 K  (tol 0.35)
+
+=== TEST C: latent heat at pure limits (Q=0 vs Q=1) ===
+  PASS  latent heat, max deviation                                1.217 %  (tol 1.5)
+
+=== TEST D: round-trip consistency of every input pair ===
+  (80 base states)
+  PASS  P,H -> satisfies inputs  (n=80, 0 multi-root)         2.868e-11 %  (tol 0.05)
+  PASS  P,S -> satisfies inputs  (n=80, 0 multi-root)         3.108e-11 %  (tol 0.05)
+  PASS  P,V -> satisfies inputs  (n=80, 11 multi-root)        2.854e-11 %  (tol 0.05)
+  PASS  P,D -> satisfies inputs  (n=80, 0 multi-root)         2.854e-11 %  (tol 0.05)
+  PASS  T,H -> satisfies inputs  (n=80, 35 multi-root)        1.974e-08 %  (tol 0.05)
+  PASS  T,S -> satisfies inputs  (n=80, 0 multi-root)         1.272e-09 %  (tol 0.05)
+  PASS  T,V -> satisfies inputs  (n=80, 0 multi-root)          4.21e-10 %  (tol 0.05)
+  PASS  P,Q -> satisfies inputs  (n=23, 0 multi-root)         3.143e-11 %  (tol 0.05)
+  PASS  T,Q -> satisfies inputs  (n=23, 0 multi-root)         1.583e-09 %  (tol 0.05)
+
+=== TEST E: two-phase mass and energy balances ===
+  PASS  NH3 mass balance  z = (1-Q)x + Qy                      1.11e-16 kg/kg  (tol 1e-09)
+  PASS  energy balance  h = (1-Q)hL + QhV                             0 kJ/kg  (tol 1e-09)
+  PASS  entropy balance                                               0 kJ/kg/K  (tol 1e-09)
+  PASS  volume balance                                                0 m3/kg  (tol 1e-12)
+
+=== TEST F: VLE is thermodynamically consistent (equal chem. potentials) ===
+  PASS  K-value closure  |Kx - y|                              9.24e-13 mol/mol  (tol 1e-09)
+
+=== TEST G: continuity across the phase boundary ===
+  PASS  enthalpy continuity at bubble/dew                     0.0005023 kJ/kg  (tol 0.05)
+
+=== TEST H: bubble/dew vs Patek-Klomfar correlation (model difference) ===
+  bubble: mean 2.12 K, max 5.59 K
+  dew:    mean 1.42 K, max 4.80 K
+  (expected: ZT and PK are different models; not a pass/fail test)
+
+=== TEST I: performance ===
+  TP flash :   0.147 ms/call
+  PH flash :  16.573 ms/call
+
+==========================================================================
+SUMMARY: 22/22 checks passed
+SINGLE-EFFECT NH3-H2O ABSORPTION CHILLER
+  P_hi = 15 bar, P_lo = 4 bar, T_gen = 400 K, T_abs = 310 K
+  strong z = 0.47901   weak x = 0.28453   refrigerant y = 0.9950
+  circulation ratio m_s/m_v = 3.653
+
+  state                     T [K]  P [bar]  h [kJ/kg]  s [kJ/kg/K]       Q
+  1 absorber out           310.00    4.000     -74.63      0.39468  0.0000
+  2 pump out               310.09   15.000     -73.30      0.39468  0.0000
+    generator 2-phase      400.00   15.000     802.33      2.78585  0.3302
+  3 rectified vapour       340.02   15.000    1380.09      4.46245  1.0000
+  4 condenser out          312.06   15.000     181.88      0.64513  0.0000
+  5 evaporator in          271.44    4.000     181.88      0.70039  0.1524
+  6 evaporator out         309.96    4.000    1359.92      5.00225  1.0000
+  7 weak, high P           400.00   15.000     375.16      1.59781  0.0000
+  8 weak, low P            361.57    4.000     375.16      1.63568  0.1029
+
+  Q_gen (gen+rect)  =   723.5428 kW
+  Q_cond            =   327.9912 kW
+  Q_evap            =   322.4703 kW
+  Q_abs             =   719.3540 kW
+  W_pump            =     1.3322 kW
+  COP               =     0.4449
+  evaporator glide  =     38.53 K (271.44 -> 309.96 K)
+
+BALANCE CHECKS
+  energy  in - out            :  -4.7976e-11 kW  (6.63e-12 % of Q_gen)
+  total mass  m_v + m_w - m_s :   0.0000e+00 kg/s
+  NH3 species                 :   5.5511e-17 kg/s
+  throttle 4->5 isenthalpic   :   1.7809e-10 kJ/kg
+  throttle 7->8 isenthalpic   :   1.2506e-12 kJ/kg
+  pump 1->2 isentropic        :   9.9920e-16 kJ/kg/K
