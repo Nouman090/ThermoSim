@@ -304,6 +304,13 @@ class HeatExchanger(Component):
                      inserted as extra points on top of this grid, so the
                      reported pinch does not depend on div_N landing near
                      one by chance.
+    anchor_exclude_frac : fraction of the normalised duty next to an anchored
+                     end that is excluded from the pinch search in a
+                     three-unknown solve (default 0.1).  The anchored end
+                     satisfies the approach by construction; the exclusion
+                     keeps the pinch equation from being satisfied by the
+                     points adjacent to it.  The post-solve validation uses
+                     the whole profile without exclusion.
     PPT_graph      : if True, display pinch temperature profile plot
     Calculate      : if True, call Cal() immediately on construction
     """
@@ -340,7 +347,8 @@ class HeatExchanger(Component):
                  Cold_In_state, Cold_Out_state,
                  UA=None, effectiveness=None, Q=None,
                  div_N=200, PPT_graph=False, Calculate=False,
-                 print_residual=False, strict_pinch=False):
+                 print_residual=False, strict_pinch=False,
+                 anchor_exclude_frac=0.1):
 
         self.HeatAdded      = HeatAdded
         self.Hot_In_state   = Hot_In_state
@@ -358,6 +366,7 @@ class HeatExchanger(Component):
         self.effectiveness  = effectiveness
         # Raise rather than warn when the internal pinch is violated.
         self.strict_pinch   = strict_pinch
+        self.anchor_exclude_frac = anchor_exclude_frac
         self.min_dT         = None
         self.Hot_Mass_flowrate  = None
         self.Cold_Mass_flowrate = None
@@ -540,9 +549,9 @@ class HeatExchanger(Component):
         if exclude_idx is not None:
             mask = np.ones(alphas.shape, dtype=bool)
             if (exclude_idx == 0 and direction == 'cold_to_hot') or (exclude_idx != 0 and direction == 'hot_to_cold'):
-                mask[alphas < 0.1] = False
+                mask[alphas < getattr(self, 'anchor_exclude_frac', 0.1)] = False
             elif (exclude_idx != 0 and direction == 'cold_to_hot') or (exclude_idx == 0 and direction == 'hot_to_cold'):
-                mask[alphas >= 0.9] = False   # up to the hot-inlet
+                mask[alphas >= 1.0 - getattr(self, 'anchor_exclude_frac', 0.1)] = False   # up to the hot-inlet
                 #                     anchor point, which must be excluded too
             return Th, Tc, dT, np.min(dT[mask])
 
@@ -584,9 +593,9 @@ class HeatExchanger(Component):
 
         A combined-cycle HRSG built that way returned 53.87 % thermal
         efficiency with every component solved and a minimum approach of
-        -12.9 K: the profiles crossed, and the design was impossible.  It
+        -13.55 K: the profiles crossed, and the design was impossible.  It
         also scored *higher* than the feasible alternative (51.98 % at
-        +15.9 K), because relaxing a constraint that is not enforced always
+        +15.09 K), because relaxing a constraint that is not enforced always
         improves the objective.  In a parameter sweep the infeasible design
         is therefore selected preferentially, which is the worst possible
         failure mode.
@@ -1314,14 +1323,32 @@ class HeatExchanger(Component):
         )
 
     def _snapshot(self):
-        """Capture the four state points and both mass flows."""
-        return (self.Hot_In, self.Hot_Out, self.Cold_In, self.Cold_Out,
-                self.Hot_Mass_flowrate, self.Cold_Mass_flowrate)
+        """
+        Capture the four state points (references AND contents) and both
+        mass flows.
+
+        Cal() binds Hot_In, Hot_Out, Cold_In and Cold_Out to the very objects
+        stored in Model.Point, and the solvers write enthalpies, mass flows and
+        exergies into those objects in place.  Saving the references alone (as
+        up to v3.4.0) therefore could not undo a failed attempt: after a
+        refusal such as "heat flows the wrong way" the model kept a negative
+        mass flow and an exergy value on the cold stream.  The contents of
+        each point are saved as well, and _restore() writes them back.
+        """
+        pts = (self.Hot_In, self.Hot_Out, self.Cold_In, self.Cold_Out)
+        saved = tuple((p, dict(vars(p))) if p is not None else (None, None)
+                      for p in pts)
+        return (pts, saved, self.Hot_Mass_flowrate, self.Cold_Mass_flowrate)
 
     def _restore(self, snap):
         """Undo any mutation made while attempting a solve."""
-        (self.Hot_In, self.Hot_Out, self.Cold_In, self.Cold_Out,
-         self.Hot_Mass_flowrate, self.Cold_Mass_flowrate) = snap
+        pts, saved, mh, mc = snap
+        for p, contents in saved:
+            if p is not None:
+                p.__dict__.clear()
+                p.__dict__.update(contents)
+        (self.Hot_In, self.Hot_Out, self.Cold_In, self.Cold_Out) = pts
+        self.Hot_Mass_flowrate, self.Cold_Mass_flowrate = mh, mc
 
     def _solve_3_unknown(self, unknowns, dP_h, dP_c):
         """
@@ -1421,6 +1448,25 @@ class HeatExchanger(Component):
     # ─────────────────────────────────────────────────────────────────────────
 
     def Cal(self):
+        """
+        Solve the exchanger.  All-or-nothing: if any step raises, the four
+        state points and both mass flows are returned to the contents they had
+        on entry, including the mass-flow propagation across a stream that
+        happens before the solver starts.  The model is written back only on
+        success.
+        """
+        self.Hot_In   = self.Model.Point[self.Hot_In_state]   if self.Hot_In_state   else None
+        self.Hot_Out  = self.Model.Point[self.Hot_Out_state]  if self.Hot_Out_state  else None
+        self.Cold_In  = self.Model.Point[self.Cold_In_state]  if self.Cold_In_state  else None
+        self.Cold_Out = self.Model.Point[self.Cold_Out_state] if self.Cold_Out_state else None
+        entry = self._snapshot()
+        try:
+            self._cal_impl()
+        except Exception:
+            self._restore(entry)
+            raise
+
+    def _cal_impl(self):
         # Fetch state points
         self.Hot_In   = self.Model.Point[self.Hot_In_state]   if self.Hot_In_state   else None
         self.Hot_Out  = self.Model.Point[self.Hot_Out_state]  if self.Hot_Out_state  else None

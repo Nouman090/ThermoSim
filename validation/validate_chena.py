@@ -58,7 +58,7 @@ def kappa_H(P, k, fluid='R134a'):
     return h_f + k * (h_g - h_f)
 
 
-def build():
+def build(P_evap=None, T_geo_out_C=54.44):
     """
     The working-fluid mass flow is NOT supplied.  The plant reports both
     geothermal temperatures, so the evaporator duty is fixed by the brine
@@ -69,6 +69,7 @@ def build():
     The cooling-water outlet is likewise left unknown so the condenser
     derives it, giving a second independent check.
     """
+    P_evap = P_EVAP if P_evap is None else P_evap
     M = ThermodynamicModel()
     M.set_dead_state(T0=T_CW_IN, P0=101325)
 
@@ -77,13 +78,13 @@ def build():
     #     kappa = (h - h_f) / (h_g - h_f)      [their Eq. 5]
     # so kappa = 1 is saturated vapour and kappa = 1.04, their Table 4
     # value, is 4.3 K of superheat.
-    M.add_point('R134a', '1', P=P_EVAP, H=kappa_H(P_EVAP, 1.04))  # turbine in
+    M.add_point('R134a', '1', P=P_evap, H=kappa_H(P_evap, 1.04))  # turbine in
     M.add_point('R134a', '2', P=P_COND)                   # turbine exit
     M.add_point('R134a', '3', P=P_COND, Q=0)              # condenser exit
-    M.add_point('R134a', '4', P=P_EVAP, T=T_EVAP_IN)      # evaporator inlet
+    M.add_point('R134a', '4', P=P_evap, T=T_EVAP_IN)      # evaporator inlet
     # geothermal brine
     M.add_point('water', 'g1', P=P_WATER, T=T_GEO_IN, Mass_flowrate=M_GEO)
-    M.add_point('water', 'g2', P=P_WATER, T=54.44 + 273.15)   # plant value
+    M.add_point('water', 'g2', P=P_WATER, T=T_geo_out_C + 273.15)   # plant value 54.44 C; IPSEpro 54.94 C
     # cooling water
     M.add_point('water', 'c1', P=P_WATER, T=T_CW_IN, Mass_flowrate=M_CW)
     M.add_point('water', 'c2', P=P_WATER)
@@ -179,10 +180,11 @@ if __name__ == '__main__':
   16.95 bar, which their own Table 4 flags as a 5.94 % discrepancy.  The two
   give very different evaporators:
 
-      16.00 bar (plant)    Tsat = 57.91 C   evaporator pinch = 2.45 K
-      16.95 bar (IPSEpro)  Tsat = 60.33 C   evaporator pinch = 0.47 K
+      16.00 bar (plant)                  Tsat = 57.91 C   evaporator pinch = 2.40 K
+      16.95 bar, plant brine exit 54.44  Tsat = 60.33 C   evaporator pinch = 0.31 K
+      16.95 bar, IPSEpro brine exit 54.94 C               evaporator pinch = 0.64 K
 
-  A 0.47 K pinch is not realisable in a physical exchanger.  The plant's own
+  A 0.31 K pinch is not realisable in a physical exchanger.  The plant's own
   16.00 bar is the self-consistent value.  This is visible to ThermoSim
   because it constructs the temperature profile; a model that matches power
   output alone cannot see it.

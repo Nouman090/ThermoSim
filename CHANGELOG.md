@@ -1,5 +1,46 @@
 
 # Changelog
+## [3.5.0] - unreleased
+
+### Fixed
+- **`HeatExchanger.Cal()` is now all-or-nothing.** `_snapshot()` used to save
+  only references to the four state-point objects, but the solvers write
+  enthalpies, mass flows and exergies into those same objects in place, so
+  `_restore()` could not undo a failed attempt. After a refusal such as
+  "Heat flows the wrong way", `Model.Point` kept a negative cold-side mass
+  flow and an exergy value. The snapshot now saves the contents of each point,
+  `Cal()` takes it before the mass-flow propagation across a stream, and every
+  failure path (pre-solve checks, either anchor, post-solve checks) restores
+  it. Covered by `tests/test_heat_exchanger_solvability_matrix.py`.
+
+### Added
+- `HeatExchanger(..., anchor_exclude_frac=0.1)`: width, as a fraction of the
+  duty, of the window next to the anchored end that is left out of the pinch
+  search in 3-unknown solves (previously a fixed 10 %). The recovered flow
+  changes by less than 1e-4 relative for values from 0.006 to 0.3.
+- `SensitivityAnalyzer.compute_sensitivity_indices` also returns
+  `mean_elasticity`, the same average as `sensitivity_index` but signed
+  (negative when the output falls as the parameter rises). `sensitivity_index`
+  remains a magnitude; both are documented as local, per-1 % measures.
+  Covered by `tests/test_sensitivity_sign.py`.
+- `examples/geothermal_orc.py`: the executable example of Section 2.3 of the
+  article (R245fa ORC on 130 C brine, 8 K approach) with its expected output,
+  run by `tests/test_example_geothermal_orc.py`.
+- `requirements-tested.txt`: the dependency versions with which the results of
+  the SoftwareX article were generated (Python 3.13). The CI matrix installs
+  the latest releases at run time and so does not pin them.
+- `tests/test_heat_exchanger_solvability_matrix.py`: case-to-test matrix for
+  all 15 two-unknown and 20 three-unknown specifications (both HEX types),
+  with manufactured reference states and acceptance criteria, plus terminal
+  crossings, an internal pinch violation (warn / strict), mid-solve refusal
+  and rollback between anchors.
+
+### Changed
+- The `_check_PPT_profile` docstring quoted -12.9 K / +15.9 K for the two
+  combined-cycle designs; these were the 200-division uniform-grid values.
+  With the exact phase-boundary enthalpies in the grid the values are
+  -13.55 K and +15.09 K, as in the article.
+
 ## [3.4.0] - 2026-09-16
 
 ### Added

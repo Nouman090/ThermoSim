@@ -33,9 +33,12 @@ P_DESIGN    = 15e5           # Pa, the design point shown in panel (a)
 # Pressures shown as markers in panel (b), in bar.
 SWEEP_BAR   = [8, 10, 12, 15, 18, 20]
 
-# Where to draw the feasibility boundary in panel (b), in bar.
-# Set to None to omit the marker.
-FEASIBLE_TO = 20.0
+# The feasibility boundary in panel (b) is COMPUTED, not drawn by hand: it is
+# the evaporating pressure at which the solver starts to refuse the
+# specification (bisection between the last sampled pressure that solves and
+# a higher one that is refused).
+BOUNDARY_BRACKET = (SWEEP_BAR[-1], 21.0)   # bar; solves at the lower end
+BOUNDARY_TOL     = 0.01                    # bar
 
 
 def build(P_evap):
@@ -74,6 +77,24 @@ def build(P_evap):
     return M
 
 
+def solves(p_bar):
+    """True if the specification is accepted at this evaporating pressure."""
+    try:
+        build(p_bar * 1e5)
+        return True
+    except Exception:
+        return False
+
+
+def feasibility_limit(lo, hi, tol):
+    """Highest pressure in [lo, hi] at which the solver still returns a result."""
+    assert solves(lo) and not solves(hi), 'bracket must straddle the boundary'
+    while hi - lo > tol:
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if solves(mid) else (lo, mid)
+    return lo
+
+
 # ── figure ─────────────────────────────────────────────────────────────
 fig, axes = plt.subplots(1, 2, figsize=(9.8, 4.0))
 
@@ -96,8 +117,9 @@ ax.plot([Q[i], Q[i]],
         [prof['Cold_Temperature_C'][i], prof['Hot_Temperature_C'][i]],
         '--', color='#333', lw=1.1)
 ax.annotate(f'pinch = {min_dT:.2f} K',
-            xy=(Q[i], prof['Hot_Temperature_C'][i]),
-            xytext=(10, 4), textcoords='offset points',
+            xy=(Q[i], 0.5 * (prof['Hot_Temperature_C'][i]
+                             + prof['Cold_Temperature_C'][i])),
+            xytext=(8, -3), textcoords='offset points',
             fontsize=9.5, color='#2e7d32', fontweight='bold')
 ax.set_xlabel('cumulative duty [MW]')
 ax.set_ylabel('temperature [°C]')
@@ -125,11 +147,10 @@ ax2.plot(d.P, d.W, '-s', color='#1f6fb4', lw=1.8, ms=6, label='net power')
 ax2.set_ylabel('net power [kW]', color='#1f6fb4')
 ax2.tick_params(axis='y', labelcolor='#1f6fb4')
 
-if FEASIBLE_TO is not None:
-    ax.axvline(FEASIBLE_TO, color='#c0392b', ls=':', lw=1.6)
-    ax.text(FEASIBLE_TO - 0.3, ax.get_ylim()[0] + 0.15,
-            'infeasible\nbeyond here', fontsize=8.2, color='#c0392b',
-            ha='right', va='bottom', linespacing=1.3)
+P_LIMIT = feasibility_limit(*BOUNDARY_BRACKET, BOUNDARY_TOL)
+ax.axvline(P_LIMIT, color='#c0392b', ls=':', lw=1.6)
+ax.text(P_LIMIT - 0.3, 0.52, f'refused above\n{P_LIMIT:.1f} bar\n(computed)', fontsize=8.2,
+        color='#c0392b', ha='right', va='center', linespacing=1.3, transform=ax.get_xaxis_transform())
 
 h1, l1 = ax.get_legend_handles_labels()
 h2, l2 = ax2.get_legend_handles_labels()
@@ -141,5 +162,6 @@ fig.tight_layout()
 fig.savefig('fig_orc_example.png', dpi=300, bbox_inches='tight')
 
 print(d.to_string(index=False))
+print(f"computed feasibility limit at {PPT:g} K: {P_LIMIT:.2f} bar")
 print(f"\ndesign point: m = {m_wf:.4f} kg/s, pinch = {min_dT:.2f} K ")
 print("saved fig_orc_example.png")

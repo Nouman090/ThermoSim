@@ -487,7 +487,13 @@ class SensitivityAnalyzer:
         Returns
         -------
         dict
-            Dictionary with sensitivity metrics.
+            Dictionary with sensitivity metrics.  ``sensitivity_index`` is the
+            mean of the *absolute* point elasticities (a magnitude, always
+            >= 0), evaluated at the midpoints of consecutive sweep points.
+            ``mean_elasticity`` is the same average *with sign*: negative when
+            the output falls as the parameter rises.  Both are local measures
+            (per 1 % change); for a finite change use the arc form
+            (dY/Y_mid)/(dX/X_mid) or the signed elasticity at the base point.
         """
         # Remove NaN values
         valid_df = df[[param_name, output_name]].dropna()
@@ -555,6 +561,9 @@ class SensitivityAnalyzer:
             # Dimensionless elasticity: "a 1 % change in the parameter moves
             # the output by S %".  Comparable across parameters.
             'sensitivity_index': sensitivity_index,
+            # Same average, signed (v3.5.0).
+            'mean_elasticity': (float(np.nanmean(elasticity))
+                                if elasticity.size else 0.0),
             # Raw slope, in output units per parameter unit.
             'mean_gradient': mean_gradient,
             'correlation': correlation,

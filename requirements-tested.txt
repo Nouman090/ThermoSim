@@ -1,0 +1,15 @@
+# Versions with which the results of the SoftwareX article were generated.
+# Python 3.13.17 (Linux).  ThermoSim itself requires Python >= 3.9; the CI
+# workflow (.github/workflows/tests.yml) runs 3.9-3.13 with the latest
+# releases of the dependencies at the time of each run.
+CoolProp==8.0.0
+scipy==1.18.1
+numpy==2.5.3
+pandas==3.0.5
+matplotlib==3.11.2
+tabulate==0.10.0
+sympy==1.14.0
+# only for the cross-tool comparison in benchmark/ (not a ThermoSim dependency)
+tespy==0.11.3
+# only for the test suite
+pytest==9.2.0
