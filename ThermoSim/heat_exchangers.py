@@ -164,6 +164,22 @@ def _safe_T_max(fluid, P, margin=0.05, max_steps=40):
 #: tests and the sign heuristic silently stopped working after its first use.
 _PENALTY = 1e10
 
+#: Stopping tolerances for every pinch search in ``_solve_2_unknown``, on an
+#: enthalpy in J/kg.  brentq stops once the root is known to within
+#: ``(xtol + rtol*|H|) / 2``, and that enthalpy error reaches the pinch as a
+#: temperature error of about ``(m_search/m_other) / cp``.  Up to v3.5.0 these
+#: were both 1e-4, so an enthalpy of 4.4e5 J/kg could stop about 22 J/kg from
+#: the root, which is several hundredths of a kelvin and more than
+#: ``_check_PPT_ends`` allows at a small PPT: an R1233zd(E) regenerator at
+#: PPT = 5 K stopped at 4.986 K and was rejected as a violation.  rtol stays
+#: relative, because the enthalpy magnitude is what sets the attainable
+#: precision; xtol only guards an enthalpy that happens to sit near zero.  At
+#: these values the temperature error is around 1e-6 K, far inside the
+#: allowance, and brentq's superlinear convergence keeps the cost to a few extra
+#: profile evaluations (about 10 % on the test suite's run time).
+_BRENTQ_XTOL = 1e-6
+_BRENTQ_RTOL = 1e-9
+
 
 def robust_solver(func, a, b, tol=1e-4):
     """
@@ -656,14 +672,14 @@ class HeatExchanger(Component):
         else:
             dT_ho = None
 
-        # The pinch is located by a root-finder working on enthalpy with a
-        # RELATIVE tolerance (brentq rtol=1e-4), so the temperature residual it
-        # leaves behind scales with the size of the problem.  A fixed absolute
-        # allowance therefore rejects perfectly good solutions on large pinches:
-        # a 30 K PPT converging to 29.986 K is 0.05 % out, i.e. numerical noise,
-        # yet a flat 1e-2 K tolerance called it a physical violation.  Scale the
-        # allowance with PPT, keeping the old strictness for small pinches.
-        # (Same reasoning as the Solve() convergence tolerance in 3.2.2.)
+        # This allowance is for rounding in user-supplied or iterated states,
+        # not for the pinch search: _BRENTQ_RTOL leaves a residual far below it.
+        # A fixed absolute allowance rejects perfectly good solutions on large
+        # pinches: a 30 K PPT converging to 29.986 K is 0.05 % out, i.e.
+        # numerical noise, yet a flat 1e-2 K tolerance called it a physical
+        # violation.  Scale the allowance with PPT, keeping the old strictness
+        # for small pinches.  (Same reasoning as the Solve() convergence
+        # tolerance in 3.2.2.)
         tol = max(1e-2, 1e-3 * self.PPT)
 
         for name, val in [("hot-inlet/cold-outlet", dT_hi),
@@ -798,7 +814,7 @@ class HeatExchanger(Component):
             H_hi_bound = self.Model.Prop(HI.fluid, StatePointName='_hi_bound', T=_safe_T_max(HI.fluid, HI.P), P=HI.P).H-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
-                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -827,7 +843,7 @@ class HeatExchanger(Component):
                 HI.H - 1e-3)
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
-                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -858,7 +874,7 @@ class HeatExchanger(Component):
                 CO.H - 1e-3)
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
-                H_ci = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                H_ci = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_ci = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -883,7 +899,7 @@ class HeatExchanger(Component):
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
-                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
                 except Exception:
                     # Narrow the upper bound to the cold-side enthalpy that
                     # corresponds to the hot inlet temperature.  Bounding a
@@ -896,7 +912,7 @@ class HeatExchanger(Component):
                     sign_factor = _fun_sign_fac(f, H_lo, _H_hi_bound)
                     # v3.2.1 passed H_hi_bound here, i.e. it retried with the
                     # exact bracket that had just failed.
-                    H_sol = brentq(f, H_lo, _H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, H_lo, _H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -922,11 +938,11 @@ class HeatExchanger(Component):
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
-                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
                 except Exception:
                     _H_lo = HO.H + 1e-3
                     sign_factor = _fun_sign_fac(f,_H_lo,H_hi_bound)
-                    H_sol = brentq(f, _H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, _H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -954,14 +970,14 @@ class HeatExchanger(Component):
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
                 try:
-                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
                 except Exception:
                     # H_ho and HI.H are the same (hot) stream, so this bound
                     # is dimensionally sound: the outlet cannot exceed the
                     # inlet enthalpy for a cooling stream.
                     _H_hi_bound = HI.H - 1e-3
                     sign_factor = _fun_sign_fac(f, H_lo, _H_hi_bound)
-                    H_sol = brentq(f, H_lo, _H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, H_lo, _H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -987,11 +1003,11 @@ class HeatExchanger(Component):
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:                
                 try:
-                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
                 except Exception:
                     _H_hi_bound = CO.H-1e-3
                     sign_factor = _fun_sign_fac(f,H_lo,_H_hi_bound)
-                    H_sol = brentq(f, H_lo, _H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, H_lo, _H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:                
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -1017,11 +1033,11 @@ class HeatExchanger(Component):
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:      
                 try:          
-                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
                 except Exception:
                     _H_lo = CI.H - 1e-3
                     sign_factor = _fun_sign_fac(f,_H_lo,H_hi_bound)
-                    H_sol = brentq(f, _H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                    H_sol = brentq(f, _H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:                
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -1056,7 +1072,7 @@ class HeatExchanger(Component):
             H_hi_bound = HO.H + mc*(CO.H - Min_H_ci)/mh-1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:                
-                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:                
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -1140,7 +1156,7 @@ class HeatExchanger(Component):
             H_hi_bound = HI.H - mc*(Min_H_co - CI.H )/mh - 1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:
-                H_sol = brentq(f,H_lo,H_hi_bound , xtol=1e-4, rtol=1e-4)
+                H_sol = brentq(f,H_lo,H_hi_bound , xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -1177,7 +1193,7 @@ class HeatExchanger(Component):
             H_hi_bound = self.Model.Prop(HO.fluid, StatePointName='_ho_hi', T=_safe_T_max(HO.fluid, HO.P), P=HO.P).H - 1e-3
             sign_factor = _fun_sign_fac(f, H_lo, H_hi_bound)
             try:
-                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:
@@ -1200,7 +1216,7 @@ class HeatExchanger(Component):
             H_hi_bound = self.Model.Prop(CI.fluid, StatePointName='_ci_hi', T=_safe_T_max(CI.fluid, CI.P), P=CI.P).H - 1e-3
             sign_factor = _fun_sign_fac(f, H_lo, H_hi_bound)
             try:
-                H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)
+                H_sol = brentq(f, H_lo, H_hi_bound, xtol=_BRENTQ_XTOL, rtol=_BRENTQ_RTOL)
             except Exception:
                 H_sol = robust_solver(f, H_lo, H_hi_bound, tol=1e-4)
                 if self.print_residual:

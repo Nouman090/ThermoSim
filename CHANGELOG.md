@@ -1,5 +1,20 @@
 
 # Changelog
+## [Unreleased]
+
+### Fixed
+- **False `PPT violation` from `HeatExchanger` pinch searches.** The `brentq`
+  calls in `_solve_2_unknown` used `xtol=1e-4, rtol=1e-4` on enthalpy, so at
+  4.4e5 J/kg the search could stop a few hundredths of a kelvin from the target,
+  outside the 0.01 K that `_check_PPT_ends` allows at a 5 K pinch. An R1233zd(E)
+  regenerator failed at PPT = 4.9 to 5.5 K while its neighbours passed. The
+  tolerances are now `xtol=1e-6, rtol=1e-9` and the allowance is unchanged, so
+  real violations are still refused. Pinch-driven solves now land on the target
+  instead of a few hundredths of a kelvin away, so results can shift slightly: the
+  mass flow in `examples/geothermal_orc.py` goes from 4.7347 to 4.7343 kg/s
+  (printed as 4.735 and 4.734) and its minimum approach from 7.9989 K to
+  8.0000 K. Covered by `tests/test_heat_exchanger_pinch_tolerance.py`.
+
 ## [3.5.0] - 2026-10-30
 
 ### Fixed
