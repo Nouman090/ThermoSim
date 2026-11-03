@@ -13,7 +13,7 @@
   instead of a few hundredths of a kelvin away, so results can shift slightly: the
   mass flow in `examples/geothermal_orc.py` goes from 4.7347 to 4.7343 kg/s
   (printed as 4.735 and 4.734) and its minimum approach from 7.9989 K to
-  8.0000 K. Covered by `tests/test_heat_exchanger_pinch_tolerance.py`.
+  8.0000 K; the example's documented output now says 4.734. Covered by `tests/test_heat_exchanger_pinch_tolerance.py`.
 
 ## [3.5.0] - 2026-10-30
 
