@@ -116,13 +116,13 @@ i = prof['Delta_T_K'].idxmin()
 ax.plot([Q[i], Q[i]],
         [prof['Cold_Temperature_C'][i], prof['Hot_Temperature_C'][i]],
         '--', color='#333', lw=1.1)
-ax.annotate(f'pinch = {min_dT:.2f} K',
+ax.annotate(f'$\\Delta T_{{pp}}$ = {min_dT:.2f} K',
             xy=(Q[i], 0.5 * (prof['Hot_Temperature_C'][i]
                              + prof['Cold_Temperature_C'][i])),
             xytext=(8, -3), textcoords='offset points',
             fontsize=9.5, color='#2e7d32', fontweight='bold')
-ax.set_xlabel('cumulative duty [MW]')
-ax.set_ylabel('temperature [°C]')
+ax.set_xlabel('cumulative duty (MW)')
+ax.set_ylabel('temperature (°C)')
 ax.set_title(f'(a)  evaporator profile, {P_DESIGN/1e5:.0f} bar\n'
              f'$\\dot m$ = {m_wf:.3f} kg/s (derived)', fontsize=10)
 ax.legend(frameon=False, fontsize=8.8, loc='lower right')
@@ -138,18 +138,18 @@ d = pd.DataFrame(rows, columns=['P', 'eta', 'W', 'm','T_brine_out_C'])
 
 ax = axes[1]
 ax.plot(d.P, d.eta, '-o', color='#2e7d32', lw=1.8, ms=6, label='efficiency')
-ax.set_xlabel('evaporator pressure [bar]')
-ax.set_ylabel('thermal efficiency [%]', color='#2e7d32')
+ax.set_xlabel('evaporator pressure (bar)')
+ax.set_ylabel('thermal efficiency (%)', color='#2e7d32')
 ax.tick_params(axis='y', labelcolor='#2e7d32')
 
 ax2 = ax.twinx()
 ax2.plot(d.P, d.W, '-s', color='#1f6fb4', lw=1.8, ms=6, label='net power')
-ax2.set_ylabel('net power [kW]', color='#1f6fb4')
+ax2.set_ylabel('net power (kW)', color='#1f6fb4')
 ax2.tick_params(axis='y', labelcolor='#1f6fb4')
 
 P_LIMIT = feasibility_limit(*BOUNDARY_BRACKET, BOUNDARY_TOL)
 ax.axvline(P_LIMIT, color='#c0392b', ls=':', lw=1.6)
-ax.text(P_LIMIT - 0.3, 0.52, f'refused above\n{P_LIMIT:.1f} bar\n(computed)', fontsize=8.2,
+ax.text(P_LIMIT - 0.3, 0.52, f'refused above\n{P_LIMIT:.2f} bar\n(computed)', fontsize=8.2,
         color='#c0392b', ha='right', va='center', linespacing=1.3, transform=ax.get_xaxis_transform())
 
 h1, l1 = ax.get_legend_handles_labels()

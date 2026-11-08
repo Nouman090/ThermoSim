@@ -41,15 +41,15 @@ for ax, (P, Ts, tag) in zip(axes, cases):
     mn = d['Delta_T_K'].min(); i = d['Delta_T_K'].idxmin()
     ax.plot([Q[i], Q[i]], [d['Cold_Temperature_C'][i], d['Hot_Temperature_C'][i]],
             color='#333', lw=1.1, ls='--')
-    ax.annotate(f'min $\\Delta T$ = {mn:.1f} K', xy=(Q[i], (d['Cold_Temperature_C'][i]+d['Hot_Temperature_C'][i])/2),
+    ax.annotate(f'min $\\Delta T$ = {mn:.1f} K'.replace('-', '\u2212') + f'', xy=(Q[i], (d['Cold_Temperature_C'][i]+d['Hot_Temperature_C'][i])/2),
                 xytext=(10, -14), textcoords='offset points', fontsize=9,
                 color='#c0392b' if mn < 0 else '#2e7d32', fontweight='bold', va='center')
     eta = M.Efficiency
-    ax.set_title(f'({"a" if tag=="feasible" else "b"})  {P/1e5:.0f} bar, {Ts-273.15:.0f} °C stack\n'
+    ax.set_title(f'({"a" if tag=="feasible" else "b"})  {"Plant B" if tag=="feasible" else "Plant A"}: {P/1e5:.0f} bar, {Ts-273.15:.0f} °C stack\n'
                  f'$\\eta$ = {eta:.2f} %   —   {tag}', fontsize=10)
-    ax.set_xlabel('cumulative duty [MW]'); ax.grid(alpha=0.25)
+    ax.set_xlabel('cumulative duty (MW)'); ax.grid(alpha=0.25)
     ax.legend(frameon=False, fontsize=8.5, loc='upper left')
-axes[0].set_ylabel('temperature [°C]')
+axes[0].set_ylabel('temperature (°C)')
 fig.tight_layout()
 fig.savefig('fig_hrsg_pinch.png', dpi=300, bbox_inches='tight')
 print('saved')

@@ -2,7 +2,7 @@
 Figure -- the anchoring rule.
 (a) The four relations by which a known temperature at one terminal fixes the
     temperature facing it across the approach.  The cold-end relations are
-    placed at the cold end and the hot-end relations at the hot end.
+    placed on the cold-end side and the hot-end relations on the hot-end side.
 (b) Terminals at which an anchor is admissible, by exchanger type.
 Regenerates fig_anchor_rules.png.   Run with:  MPLBACKEND=Agg python fig_anchor_rules.py
 """
@@ -22,9 +22,9 @@ for x in (x0, x1):
     ax.annotate('', xy=(x, lo), xytext=(x, hi), arrowprops=dict(arrowstyle='<->', color='#555', lw=1.1))
 ax.text(x0-0.03, Th[0]+0.02, '$T_{ho}$', ha='right', fontsize=14); ax.text(x0-0.03, Tc[0]-0.03, '$T_{ci}$', ha='right', fontsize=14)
 ax.text(x1+0.03, Th[1]+0.01, '$T_{hi}$', ha='left', fontsize=14); ax.text(x1+0.03, Tc[1]-0.03, '$T_{co}$', ha='left', fontsize=14)
-ax.text(x0+0.20, 0.235, 'at the cold end', color=BRN, fontsize=13)
-ax.text(x0+0.20, 0.165, '$T_{ci} = T_{ho} - \\Delta T_{pp}$', fontsize=14)
-ax.text(x0+0.20, 0.095, '$T_{ho} = T_{ci} + \\Delta T_{pp}$', fontsize=14)
+ax.text(0.03, 0.72, 'at the cold end', color=BRN, fontsize=13)
+ax.text(0.03, 0.65, '$T_{ci} = T_{ho} - \\Delta T_{pp}$', fontsize=14)
+ax.text(0.03, 0.58, '$T_{ho} = T_{ci} + \\Delta T_{pp}$', fontsize=14)
 ax.text(x1-0.02, 0.43, 'at the hot end', color=BRN, fontsize=13, ha='right')
 ax.text(x1-0.02, 0.365, '$T_{co} = T_{hi} - \\Delta T_{pp}$', fontsize=14, ha='right')
 ax.text(x1-0.02, 0.30, '$T_{hi} = T_{co} + \\Delta T_{pp}$', fontsize=14, ha='right')
@@ -42,7 +42,7 @@ def mini(pos, title, hot, cold, ends):
     for s in ('top', 'right'): a.spines[s].set_visible(False)
     return a
 ax1 = mini(0, 'counter-flow: either end', [0.40, 0.45, 0.55, 0.75, 0.90, 0.95], [0.20, 0.28, 0.38, 0.62, 0.80, 0.88], ['cold', 'hot'])
-ax2 = mini(1, 'evaporator: hot-inlet end', [0.40, 0.45, 0.55, 0.75, 0.90, 0.95], [0.20, 0.45, 0.45, 0.45, 0.45, 0.80], ['hot'])
-ax3 = mini(2, 'condenser: hot-outlet end', [0.45, 0.60, 0.60, 0.60, 0.60, 0.85], [0.20, 0.30, 0.42, 0.58, 0.70, 0.78], ['cold'])
+ax2 = mini(1, 'evaporator: hot-inlet end', [0.40, 0.52, 0.62, 0.80, 0.90, 0.95], [0.20, 0.45, 0.45, 0.45, 0.45, 0.80], ['hot'])
+ax3 = mini(2, 'condenser: hot-outlet end', [0.45, 0.60, 0.60, 0.60, 0.60, 0.85], [0.15, 0.22, 0.30, 0.40, 0.47, 0.52], ['cold'])
 ax1.set_title('(b)  where an anchor is admissible\ncounter-flow: either end', fontsize=11)
 fig.savefig('fig_anchor_rules.png', dpi=250, bbox_inches='tight')

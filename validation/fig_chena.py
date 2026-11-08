@@ -45,14 +45,14 @@ for j, (name, e, dk, col) in enumerate(series):
     xs = x + (j-1)*w
     ax.bar(xs, e, w, label=name, color=col)
     for i, (xi, v) in enumerate(zip(xs, e)):
-        txt = f'{v:+.2f}'
+        txt = f'{v:+.2f}'.replace('-', '\u2212')
         ax.text(xi, v + (0.10 if v >= 0 else -0.10), txt, ha='center',
                 va='bottom' if v >= 0 else 'top', fontsize=6.6, color=col, fontweight='bold')
-    ax.text(x[1] + (j-1)*w, 0.55 + 0.0*j, f'{dk:+.2f} K', ha='center', va='bottom',
+    ax.text(x[1] + (j-1)*w, 0.55 + 0.0*j, f'{dk:+.2f} K'.replace('-', '\u2212'), ha='center', va='bottom',
             fontsize=6.4, color=col, fontweight='bold', rotation=90)
 ax.axhline(0, color='#333', lw=1.0)
 ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=8.2)
-ax.set_ylabel('signed deviation from plant data [%]\n(model - plant)/plant')
+ax.set_ylabel('signed deviation from plant data (%)\n(model − plant)/plant')
 ax.set_title('(a)  Chena geothermal ORC', fontsize=10)
 ax.legend(frameon=False, fontsize=7.6, loc='upper left'); ax.grid(axis='y', alpha=0.25); ax.set_axisbelow(True)
 ax.set_ylim(-2.6, 3.4)
@@ -71,7 +71,7 @@ for k, (tag, Mx, ls, col) in enumerate(pts):
     mn_ = d['Delta_T_K'].min()
     ax.plot(Q, d['Cold_Temperature_C'], ls, color=col, lw=1.8, label=f'R134a, {tag}: min ΔT = {mn_:.2f} K')
     mins.append((tag, mn_, col))
-ax.set_xlabel('cumulative duty [MW]'); ax.set_ylabel('temperature [°C]')
+ax.set_xlabel('cumulative duty (MW)'); ax.set_ylabel('temperature (°C)')
 ax.set_title('(b)  evaporator profile, three operating points', fontsize=10)
 ax.grid(alpha=0.25); ax.set_ylim(5, 85)
 ax.legend(frameon=False, fontsize=6.8, loc='lower right')
