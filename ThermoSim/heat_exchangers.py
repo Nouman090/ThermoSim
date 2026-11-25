@@ -231,6 +231,37 @@ def _T_sat(model, fluid, P, Q_val):
     return model.Prop(fluid, StatePointName='_sat', P=P, Q=Q_val).T
 
 
+def _sat_enthalpies(fluid, P_ref):
+    """
+    (H_liq, H_vap): bubble- and dew-point enthalpies of `fluid` at P_ref, or
+    None when there is no two-phase envelope there (incompressible fluid,
+    supercritical pressure, NH3-H2O pure-component limit).
+    """
+    if isinstance(fluid, NH3H2OFluid):
+        try:
+            return (_aw.state(z=fluid.z, P=P_ref / 1e5, Q=0.0, warn=False).h * 1e3,
+                    _aw.state(z=fluid.z, P=P_ref / 1e5, Q=1.0, warn=False).h * 1e3)
+        except _aw.AmmoniaWaterError:
+            return None
+    try:
+        return (CP.PropsSI('H', 'P', P_ref, 'Q', 0, fluid),
+                CP.PropsSI('H', 'P', P_ref, 'Q', 1, fluid))
+    except Exception:
+        return None
+
+
+def _phase_zone(sat, H):
+    """Phase region of a stream at enthalpy H, given _sat_enthalpies()."""
+    if sat is None:
+        return 'single-phase'
+    H_liq, H_vap = sat
+    if H <= H_liq:
+        return 'liquid'
+    if H >= H_vap:
+        return 'vapour'
+    return 'two-phase'
+
+
 def _phase_boundary_alphas(fluid, P_ref, H_start, H_end):
     """
     Fractional positions in (0, 1) where a stream crosses saturated liquid
@@ -256,18 +287,10 @@ def _phase_boundary_alphas(fluid, P_ref, H_start, H_end):
     span = H_end - H_start
     if abs(span) < 1e-9:
         return []
-    if isinstance(fluid, NH3H2OFluid):
-        try:
-            H_liq = _aw.state(z=fluid.z, P=P_ref / 1e5, Q=0.0, warn=False).h * 1e3
-            H_vap = _aw.state(z=fluid.z, P=P_ref / 1e5, Q=1.0, warn=False).h * 1e3
-        except _aw.AmmoniaWaterError:
-            return []      # pure-component limit or no two-phase envelope here
-    else:
-        try:
-            H_liq = CP.PropsSI('H', 'P', P_ref, 'Q', 0, fluid)
-            H_vap = CP.PropsSI('H', 'P', P_ref, 'Q', 1, fluid)
-        except Exception:
-            return []          # incompressible fluid or supercritical pressure
+    sat = _sat_enthalpies(fluid, P_ref)
+    if sat is None:
+        return []
+    H_liq, H_vap = sat
 
     alphas = []
     for H_sat in (H_liq, H_vap):
@@ -295,7 +318,11 @@ class HeatExchanger(Component):
     Hot_Out_state  : key into Model.Point for hot outlet
     Cold_In_state  : key into Model.Point for cold inlet
     Cold_Out_state : key into Model.Point for cold outlet
-    UA             : optional overall conductance [W/K]
+    UA             : optional overall conductance [W/K].  After a solve
+                     this holds the total UA summed zone by zone over the
+                     phase zones of both streams (see ``zones`` and
+                     ``UA_zones``); ``UA_ends`` / ``LMTD_ends`` keep the
+                     single-LMTD value from the four end temperatures.
     effectiveness  : optional NTU-ε value (0-1)
     Q              : optional heat duty [W]
     div_N          : number of segments for pinch profile (default 200).
@@ -363,6 +390,12 @@ class HeatExchanger(Component):
         self.LMTD           = None
         self.Q              = Q
         self.UA             = UA
+        # Zone-by-zone conductance (see _compute_zones); the single-LMTD
+        # values from the end temperatures are kept as UA_ends / LMTD_ends.
+        self.zones          = None
+        self.UA_zones       = None
+        self.UA_ends        = None
+        self.LMTD_ends      = None
         self.effectiveness  = effectiveness
         # Raise rather than warn when the internal pinch is violated.
         self.strict_pinch   = strict_pinch
@@ -545,6 +578,11 @@ class HeatExchanger(Component):
             Tc[i] = self.Model.Prop(self.Cold_In.fluid, StatePointName='_c',
                                     H=H_c[i], P=Pc[i]).T
         dT = Th - Tc
+        # Kept for _compute_zones(), which splits this same grid into
+        # phase zones instead of marching a second profile.
+        self._profile = dict(alphas=alphas, H_h=H_h, H_c=H_c, Th=Th, Tc=Tc,
+                             P_h0=P_h0, P_c0=P_c0, Q_total=Q_total,
+                             direction=direction)
 
         if exclude_idx is not None:
             mask = np.ones(alphas.shape, dtype=bool)
@@ -627,6 +665,11 @@ class HeatExchanger(Component):
         except Exception:
             return None                      # never fail the solve on a check
 
+        try:
+            self._compute_zones()
+        except Exception:
+            pass                             # keep the end-temperature UA
+
         self.min_dT = float(min_dT)
         tol = max(1e-2, 1e-3 * self.PPT)
         if min_dT <= self.PPT - tol:
@@ -643,6 +686,88 @@ class HeatExchanger(Component):
                 raise ValueError(msg)
             warnings.warn(msg, UserWarning, stacklevel=3)
         return self.min_dT
+
+    def _compute_zones(self):
+        """
+        Split the exchanger into phase zones and give each its own UA.
+
+        A single LMTD from the four end temperatures is only valid when U
+        and the heat capacities are constant along the unit.  When a stream
+        changes phase it is not: an evaporator has a boiling zone and a
+        superheating zone, a condenser a desuperheating and a condensing
+        zone, a generator a preheating, a boiling and a superheating zone,
+        each with a different temperature difference (and, in practice, a
+        different U).  The end-temperature UA can then be wrong by tens of
+        per cent in either direction.
+
+        The profile from _build_profile() already has a node at every
+        bubble and dew point on both streams, so the zone boundaries fall
+        exactly on nodes.  Each segment contributes dQ / LMTD_segment, and
+        consecutive segments with the same (hot phase, cold phase) pair form
+        one zone.  Because both streams move monotonically through their
+        phases, each pair occurs at most once.
+
+        Sets
+            zones     list of dicts, from the hot-outlet / cold-inlet end:
+                      label, hot, cold (phase of each stream), Q [W],
+                      UA [W/K], LMTD [K] (= Q/UA), T_hot_in, T_hot_out,
+                      T_cold_in, T_cold_out [K], min_dT [K]
+            UA_zones  {label: UA} in the same order
+            UA        sum of the zone UAs (total conductance)
+            LMTD      Q / UA, the effective mean temperature difference
+        The end-temperature values stay available as UA_ends and LMTD_ends.
+        If the profiles touch or cross anywhere, UA is undefined and the
+        zone UAs are left as nan.
+        """
+        prof = getattr(self, '_profile', None)
+        if not prof or prof['direction'] != 'cold_to_hot':
+            return
+        a, H_h, H_c = prof['alphas'], prof['H_h'], prof['H_c']
+        Th, Tc = prof['Th'], prof['Tc']
+        dT = Th - Tc
+        sat_h = _sat_enthalpies(self.Hot_In.fluid, prof['P_h0'])
+        sat_c = _sat_enthalpies(self.Cold_In.fluid, prof['P_c0'])
+
+        zones = []
+        for i in range(a.size - 1):
+            dQ = (a[i + 1] - a[i]) * prof['Q_total']
+            if dQ <= 0.0:
+                continue
+            hot = _phase_zone(sat_h, 0.5 * (H_h[i] + H_h[i + 1]))
+            cold = _phase_zone(sat_c, 0.5 * (H_c[i] + H_c[i + 1]))
+            d1, d2 = dT[i], dT[i + 1]
+            if d1 <= 0.0 or d2 <= 0.0:
+                ua = float('nan')
+            elif abs(d1 - d2) > 1e-9 * max(d1, d2):
+                ua = dQ * np.log(d1 / d2) / (d1 - d2)
+            else:
+                ua = dQ / d1
+            if zones and (zones[-1]['hot'], zones[-1]['cold']) == (hot, cold):
+                z = zones[-1]
+                z['Q'] += dQ
+                z['UA'] += ua
+                z['T_hot_in'], z['T_cold_out'] = Th[i + 1], Tc[i + 1]
+                z['min_dT'] = min(z['min_dT'], d2)
+            else:
+                zones.append(dict(label=f'hot {hot}, cold {cold}', hot=hot,
+                                  cold=cold, Q=dQ, UA=ua,
+                                  T_hot_out=Th[i], T_hot_in=Th[i + 1],
+                                  T_cold_in=Tc[i], T_cold_out=Tc[i + 1],
+                                  min_dT=min(d1, d2)))
+        if not zones:
+            return
+        for z in zones:
+            z['Q'] = float(z['Q'])
+            z['UA'] = float(z['UA'])
+            z['LMTD'] = z['Q'] / z['UA'] if z['UA'] > 0 else float('nan')
+            for k in ('T_hot_in', 'T_hot_out', 'T_cold_in', 'T_cold_out', 'min_dT'):
+                z[k] = float(z[k])
+        self.zones = zones
+        self.UA_zones = {z['label']: z['UA'] for z in zones}
+        UA = sum(z['UA'] for z in zones)
+        self.UA = UA
+        self.LMTD = (self.Q / UA if self.Q is not None and UA > 0
+                     else float('nan'))
 
     def _check_PPT_ends(self):
         """Verify PPT is not violated at either end after solving."""
@@ -1644,7 +1769,9 @@ class HeatExchanger(Component):
             if abs(dH_h) > 1e-9:
                 self.Hot_to_Cold = dH_c / dH_h
 
-        # UA via LMTD
+        # UA via LMTD (end temperatures).  Zone values from the previous
+        # Cal() must not survive into this one.
+        self.zones = self.UA_zones = None
         if (self.Q is not None and None not in (HI, HO, CI, CO)
                 and None not in (HI.T, HO.T, CI.T, CO.T)):
             dT1 = HI.T  - CO.T
@@ -1656,8 +1783,13 @@ class HeatExchanger(Component):
                 # __str__ reports UA and users routinely want the mean
                 # temperature difference that produced it.
                 self.LMTD = LMTD
+                self.LMTD_ends = LMTD
                 if abs(LMTD) > 1e-9:
                     self.UA = self.Q / LMTD
+                    self.UA_ends = self.UA
+                # For a stream that changes phase these are replaced by the
+                # zone-by-zone values in _compute_zones() (called from
+                # _check_PPT_profile); UA_ends / LMTD_ends keep these.
 
         # Pinch graph
         if (self.PPT_graph and self.Q is not None
@@ -1967,7 +2099,10 @@ class HeatExchanger(Component):
                 f"  Q    : {self.Q:.2f} W\n"
                 f"  UA   : {self.UA} W/K\n"
                 f"  LMTD : {self.LMTD} K\n"
-                f"  Ex_D : {self.Ex_D}\n"
+                + ''.join(f"    {z['label']:34s} Q {z['Q'] / 1e3:10.2f} kW  "
+                          f"UA {z['UA'] / 1e3:9.3f} kW/K  LMTD {z['LMTD']:7.2f} K\n"
+                          for z in (self.zones or []))
+                + f"  Ex_D : {self.Ex_D}\n"
                 f"  Solved: {self.Solution_Status}"
             )
         except Exception:
