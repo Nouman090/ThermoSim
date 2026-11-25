@@ -26,6 +26,36 @@
   the dew point than the bubble point, because just above the bubble point
   the state is two-phase. The warning now states the offset and which side
   was chosen. Covered by `tests/test_state_near_saturation.py`.
+- **`HeatExchanger.UA` is now summed zone by zone when a stream changes
+  phase.** It used to be `Q / LMTD` from the four end temperatures, which
+  assumes constant heat capacities along the unit. In an evaporator,
+  condenser or boiler that is not true. For R601 boiling at 5 °C against
+  chilled water 14 → 7 °C with 5 K superheat, the end-temperature UA was
+  508.7 kW/K against 317.6 kW/K zone by zone (+60 %). For R601
+  desuperheating from 60 °C and condensing at 40 °C against water
+  30 → 35 °C, it was too low by about 30 %. The temperature profile already
+  has a node at every bubble and dew point on both streams (since 3.3.0),
+  so it is split there into phase zones. Each segment contributes
+  dQ / LMTD of that segment, and UA is the sum.
+
+### Added
+- **`HeatExchanger.zones` and `HeatExchanger.UA_zones`.** `zones` lists
+  each phase zone from the hot-outlet / cold-inlet end. Each entry has
+  `label` (e.g. `'hot liquid, cold two-phase'`), `hot`, `cold` (each
+  `'liquid'`, `'two-phase'`, `'vapour'` or `'single-phase'` for fluids with
+  no two-phase envelope, such as thermal oils), `Q`, `UA`, `LMTD`
+  (= Q/UA), the zone's end temperatures and its `min_dT`. `UA_zones` is
+  `{label: UA}`. A zone with its own U gives its area as UA/U. `print()`
+  of a heat exchanger lists the zones.
+- **`HeatExchanger.UA_ends` and `HeatExchanger.LMTD_ends`** keep the old
+  end-temperature values. `LMTD` is now the effective mean temperature
+  difference, Q/UA.
+
+### Changed
+- For a single-phase exchanger `UA` changes only through the variation of
+  heat capacity (water/water 80 → 40 °C against 20 → 60 °C: −0.06 %).
+  On its own this change leaves the output of every validation script and
+  shipped example unchanged.
 
 ## [3.5.0] - 2026-10-30
 
