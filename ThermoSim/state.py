@@ -257,18 +257,36 @@ class Prop:
         val1, val2   = list(self.properties.values())
 
         # --- handle near-saturation for P-T inputs ---------------------
+        # CoolProp refuses a (T, P) flash within ~1e-4 % of the saturation
+        # pressure, so inputs within a small relative band of T_sat are
+        # snapped onto the saturation line.  The snap is SIDE-AWARE: a T
+        # above T_sat is saturated vapour (Q=1), a T below it (or equal to
+        # it within round-off) is saturated liquid (Q=0).  Up to v3.5.0 it
+        # always chose Q=0, turning a slightly superheated suction state
+        # into liquid.  For a zeotropic mixture, T_sat (Q=0) is the bubble
+        # point and a T just above it is two-phase with tiny quality, so
+        # Q=1 is chosen only when T is nearer the dew point than the bubble
+        # point (always true for a pure fluid, where they coincide).
         if {prop1, prop2} == {'P', 'T'}:
             P = self.properties['P']
             T = self.properties['T']
             try:
                 T_sat = CP.PropsSI('T', 'P', P, 'Q', 0, self.fluid)
                 if abs(T - T_sat) / T_sat < 1e-4:
+                    Q_snap = 0.0
+                    # Round-off band: T == T_sat(P) keeps the historical Q=0.
+                    if (T - T_sat) / T_sat > 1e-7:
+                        T_dew = CP.PropsSI('T', 'P', P, 'Q', 1, self.fluid)
+                        if T - T_sat > T_dew - T:
+                            Q_snap = 1.0
+                    side = ("saturated vapour (Q=1)" if Q_snap == 1.0
+                            else "saturated liquid (Q=0)")
                     warnings.warn(
-                        f"State '{self.StatePointName}' is near saturation. "
-                        f"Assuming saturated liquid (Q=0)."
+                        f"State '{self.StatePointName}' is near saturation "
+                        f"(T - T_sat = {T - T_sat:+.4f} K). Assuming {side}."
                     )
                     prop1, val1 = 'P', P
-                    prop2, val2 = 'Q', 0.0
+                    prop2, val2 = 'Q', Q_snap
             except Exception:
                 pass
 

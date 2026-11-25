@@ -1,5 +1,21 @@
 
 # Changelog
+## [Unreleased]
+
+### Fixed
+- **Near-saturation `(P, T)` inputs now snap to the correct side of the
+  dome.** CoolProp cannot flash `(T, P)` right at saturation, so a state
+  within `|T - T_sat|/T_sat < 1e-4` (about ±0.03 K) is snapped onto the
+  saturation line. The snap always chose saturated liquid (`Q=0`), even
+  for `T > T_sat`: a suction state 0.022 K superheated came back as liquid,
+  with `h_l` instead of `h_v`, and a compressor fed from it produced an
+  outlet below saturation. A `T` above `T_sat` now gives saturated vapour
+  (`Q=1`); below `T_sat`, or equal to it within round-off, still gives
+  `Q=0`. For a zeotropic mixture, `Q=1` is chosen only when `T` is nearer
+  the dew point than the bubble point, because just above the bubble point
+  the state is two-phase. The warning now states the offset and which side
+  was chosen. Covered by `tests/test_state_near_saturation.py`.
+
 ## [3.5.0] - 2026-10-30
 
 ### Fixed
