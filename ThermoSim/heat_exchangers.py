@@ -1901,8 +1901,8 @@ class HeatExchanger(Component):
         # is constant.
         #
         # Properties are taken through Model.Prop rather than CoolProp
-        # directly so that the incompressible correlations (Therminol-66)
-        # are handled by the same path as everything else.
+        # directly so that fluid aliases (e.g. 'T66') and the NH3-H2O
+        # mixture are handled by the same path as everything else.
         T_hi, T_ci = HI.T, CI.T
         h_hi_at_Tci = mdl.Prop(HI.fluid, StatePointName='_eps_h',
                                T=T_ci, P=HO.P).H

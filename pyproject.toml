@@ -45,5 +45,3 @@ Changelog = "https://github.com/Nouman090/ThermoSim/blob/main/CHANGELOG.md"
 include = ["ThermoSim*"]
 exclude = ["tests*"]
 
-[tool.setuptools.package-data]
-ThermoSim = ["*.json"]

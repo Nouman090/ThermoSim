@@ -669,8 +669,7 @@ class NH3H2OFluid:
 
     Pass this wherever ThermoSim expects a CoolProp fluid-name string, e.g.
     ``Model.add_point(NH3H2OFluid(0.4), 'S1', P=..., T=...)``. `Prop`
-    dispatches on `isinstance(fluid, NH3H2OFluid)` (mirroring how it already
-    dispatches on the Therminol-66 fluid-name aliases) and routes property
+    dispatches on `isinstance(fluid, NH3H2OFluid)` and routes property
     calculations through this module instead of CoolProp.
 
     Composition is bundled into the fluid identifier -- not passed as a

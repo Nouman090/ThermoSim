@@ -50,15 +50,17 @@ jobs:
       - name: Run the test suite
         run: pytest tests/ -q
 
-      - name: Check bundled package data
+      - name: Check the Therminol 66 alias
         run: |
           python -c "
+          import CoolProp.CoolProp as CP
           from ThermoSim import config
           from ThermoSim.state import Prop
           config.set_dead_state(298.15, 101325)
           h = Prop('T66', 'x', P=1e5, T=400).H
-          assert abs(h - 221493.4) < 1.0, f'T66 enthalpy wrong: {h}'
-          print('T66 package data OK:', round(h, 1), 'J/kg')
+          h_cp = CP.PropsSI('H', 'T', 400, 'P', 1e5, 'INCOMP::T66')
+          assert abs(h - h_cp) < 1e-6, f'T66 alias wrong: {h} vs {h_cp}'
+          print('T66 -> INCOMP::T66 OK:', round(h, 1), 'J/kg')
           "
       - name: Run validation against published examples
         if: matrix.python-version == '3.12'

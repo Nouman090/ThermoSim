@@ -56,6 +56,23 @@
   heat capacity (water/water 80 → 40 °C against 20 → 60 °C: −0.06 %).
   On its own this change leaves the output of every validation script and
   shipped example unchanged.
+- **Therminol 66 now comes from CoolProp (`INCOMP::T66`); ThermoSim's own
+  polynomial fit and `T66.json` are removed.** The names `'T66'`,
+  `'Therminol66'`, `'Therminol-66'` and `'INCOMP::T66'` (any case) all
+  resolve to CoolProp's fluid, and `point.fluid` holds `'INCOMP::T66'`.
+  The two agree on heat capacity and density to within 0.1 % from 300 to
+  600 K, but their enthalpy and entropy references differ (the polynomial
+  gave H = 221.5 kJ/kg at 400 K, CoolProp gives 186.6 kJ/kg). Enthalpy
+  differences, duties and exergy are unaffected by the reference, but
+  absolute `H` and `S` of oil state points change. The old reference also
+  made ThermoSim enthalpies inconsistent with CoolProp: evaluating CoolProp
+  `T(P, H)` at a ThermoSim oil enthalpy was about 17 K off. CoolProp's valid
+  range is 0 to 380 °C (the fit covered -3 to 350 °C), and outside it
+  CoolProp raises instead of extrapolating with a warning. Any CoolProp
+  incompressible fluid (`INCOMP::...`) now gets `Q = None` and the phase
+  label `'Incompressible liquid'`, and the plotter draws no dome for it.
+  New helpers `ThermoSim.state.canonical_fluid` and `is_incompressible`.
+  Covered by `tests/test_therminol_coolprop.py`.
 
 ## [3.5.0] - 2026-10-30
 

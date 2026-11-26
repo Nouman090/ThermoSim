@@ -22,8 +22,6 @@ the ``update(**kwargs)`` helper:
 """
 
 import warnings
-import json
-import os
 import numpy as np
 import CoolProp.CoolProp as CP
 
@@ -31,19 +29,40 @@ from . import config                       # reads dead_states from config.py
 from . import nh3h2o as _aw
 from .nh3h2o import NH3H2OFluid, AmmoniaWaterError as _AmmoniaWaterError
 
-# Path to T66.json (sits next to this file OR in project root)
-_PKG_DIR = os.path.dirname(os.path.abspath(__file__))
-_T66_PATHS = [
-    os.path.join(_PKG_DIR, 'T66.json'),    # inside the package folder
-    os.path.join(_PKG_DIR, '..', 'T66.json'),  # project root
-]
-
 # Attributes whose assignment triggers a full thermodynamic re-solve.
 _THERMO_INPUTS = {'P', 'T', 'H', 'S', 'Q', 'D'}
 
-# Fluid names handled by the built-in Therminol-66 correlations rather than
-# by CoolProp.  Matching is case-insensitive.
-_T66_ALIASES = {'therminol66', 'therminol-66', 't66', 'incomp::t66'}
+# Short names accepted for Therminol 66.  Up to v3.5.0 ThermoSim carried its
+# own polynomial fit (T66.json) for these; CoolProp's incompressible backend
+# provides Therminol 66 directly, so every alias now resolves to it.
+# Matching is case-insensitive.
+_FLUID_ALIASES = {
+    'therminol66':  'INCOMP::T66',
+    'therminol-66': 'INCOMP::T66',
+    't66':          'INCOMP::T66',
+    'incomp::t66':  'INCOMP::T66',
+}
+
+
+def canonical_fluid(fluid):
+    """Return the CoolProp name for `fluid`, resolving ThermoSim aliases.
+
+    Non-string fluids (an NH3H2OFluid) and names without an alias are
+    returned unchanged.
+    """
+    if isinstance(fluid, str):
+        return _FLUID_ALIASES.get(fluid.strip().lower(), fluid)
+    return fluid
+
+
+def is_incompressible(fluid):
+    """True for CoolProp incompressible-backend fluids (``INCOMP::...``).
+
+    These are single-phase liquids: CoolProp has no saturation states or
+    vapour quality for them.
+    """
+    return (isinstance(fluid, str)
+            and canonical_fluid(fluid).strip().upper().startswith('INCOMP::'))
 
 # Attributes whose assignment triggers only the cheap exergy update.
 _EXERGY_INPUTS = {'Mass_flowrate', 'DeadStates'}
@@ -77,7 +96,7 @@ class Prop:
         # point technically has an upstream neighbour.
         object.__setattr__(self, '_user_set_flowrate', Mass_flowrate is not None)
 
-        self.fluid = fluid
+        self.fluid = canonical_fluid(fluid)
         self.Mass_flowrate = Mass_flowrate
         self.StatePointName = StatePointName
         self.Solution_Status = Solution_Status
@@ -124,8 +143,6 @@ class Prop:
         if len(self.properties) == 2:
             if self._is_nh3h2o(self.fluid):
                 self._calc_nh3h2o()
-            elif self._is_therminol66(self.fluid):
-                self._calc_therminol66()
             else:
                 self._calc_coolprop()
 
@@ -255,6 +272,7 @@ class Prop:
     def _calc_coolprop(self):
         prop1, prop2 = list(self.properties.keys())
         val1, val2   = list(self.properties.values())
+        incomp = is_incompressible(self.fluid)
 
         # --- handle near-saturation for P-T inputs ---------------------
         # CoolProp refuses a (T, P) flash within ~1e-4 % of the saturation
@@ -267,7 +285,7 @@ class Prop:
         # point and a T just above it is two-phase with tiny quality, so
         # Q=1 is chosen only when T is nearer the dew point than the bubble
         # point (always true for a pure fluid, where they coincide).
-        if {prop1, prop2} == {'P', 'T'}:
+        if {prop1, prop2} == {'P', 'T'} and not incomp:
             P = self.properties['P']
             T = self.properties['T']
             try:
@@ -298,11 +316,17 @@ class Prop:
             if self.T  is None: object.__setattr__(self, 'T',  CP.PropsSI('T', prop1, val1, prop2, val2, self.fluid))
             if self.H  is None: object.__setattr__(self, 'H',  CP.PropsSI('H', prop1, val1, prop2, val2, self.fluid))
             if self.S  is None: object.__setattr__(self, 'S',  CP.PropsSI('S', prop1, val1, prop2, val2, self.fluid))
-            if self.Q  is None: object.__setattr__(self, 'Q',  CP.PropsSI('Q', prop1, val1, prop2, val2, self.fluid))
+            # Incompressible liquids have no vapour quality (CoolProp raises).
+            if self.Q  is None and not incomp:
+                object.__setattr__(self, 'Q',  CP.PropsSI('Q', prop1, val1, prop2, val2, self.fluid))
             if self.D  is None: object.__setattr__(self, 'D',  CP.PropsSI('D', prop1, val1, prop2, val2, self.fluid))
             if self.Cp is None: object.__setattr__(self, 'Cp', CP.PropsSI('C', prop1, val1, prop2, val2, self.fluid))
 
-            self._classify_phase()
+            if incomp:
+                object.__setattr__(self, 'Q', None)
+                object.__setattr__(self, 'phase', 'Incompressible liquid')
+            else:
+                self._classify_phase()
             self._calc_exergy()
 
             object.__setattr__(self, 'Solution_Status', True)
@@ -379,142 +403,8 @@ class Prop:
         object.__setattr__(self, 'Ex', Ex)
 
     # ------------------------------------------------------------------ #
-    #  Therminol-66 polynomial calculation
-    # ------------------------------------------------------------------ #
-    @staticmethod
-    def _t66_entropy(cp_coeffs, entropy_spec, T):
-        """
-        Specific entropy of an incompressible liquid, s(T) = ∫ Cp/T dT.
-
-        For a quadratic Cp = a·T² + b·T + c this integrates to
-
-            s(T) - s_ref = a/2·(T² - T_ref²) + b·(T - T_ref) + c·ln(T/T_ref)
-
-        which is NOT a polynomial — the logarithmic term is why the original
-        ``T66.json`` could not carry an ``entropy`` polynomial and why the
-        key was missing altogether (raising ``KeyError: 'entropy'`` for every
-        Therminol-66 state point up to v3.2.1).
-
-        The coefficients are read from the ``specific_heat`` block, so the
-        enthalpy, Cp and entropy correlations can never drift out of step.
-        """
-        T_ref = entropy_spec.get('T_ref', 273.15)
-        s_ref = entropy_spec.get('s_ref', 0.0)
-
-        # np.polyval order is highest power first.
-        c = list(cp_coeffs)
-        while len(c) < 3:
-            c.insert(0, 0.0)
-        a, b, c0 = c[-3], c[-2], c[-1]
-
-        return (s_ref
-                + 0.5 * a * (T ** 2 - T_ref ** 2)
-                + b * (T - T_ref)
-                + c0 * np.log(T / T_ref))
-
-    def _calc_therminol66(self):
-        t66_path = None
-        for p in _T66_PATHS:
-            if os.path.isfile(p):
-                t66_path = p
-                break
-        if t66_path is None:
-            raise FileNotFoundError(
-                "T66.json not found. Looked in: " + ", ".join(_T66_PATHS)
-            )
-
-        with open(t66_path, 'r') as f:
-            prop = json.load(f)
-
-        data   = prop['fluids']['T66']
-        h_mean = prop['h_normalization']['h_mean']
-        h_std  = prop['h_normalization']['h_std']
-
-        required = ['density', 'specific_heat', 'enthalpy', 'inverse_enthalpy']
-        missing  = [k for k in required if k not in data]
-        if missing:
-            raise KeyError(
-                f"T66.json is missing correlation block(s): {missing}. "
-                f"Present: {sorted(data)}"
-            )
-
-        coeffs = {k: data[k]['coeffs'] for k in required}
-        entropy_spec = data.get('entropy', {'type': 'cp_integral'})
-
-        # Guard: disable hook during internal writes
-        object.__setattr__(self, '_initialising', True)
-        try:
-            # --- resolve temperature ------------------------------------
-            # Whichever of (T, H) the user supplied is authoritative and is
-            # NOT overwritten: the enthalpy correlation and its inverse are
-            # independent fits, so round-tripping would silently perturb the
-            # user's input and break downstream energy balances.
-            T_given = self.T is not None
-            H_given = self.H is not None
-
-            if T_given:
-                pass
-            elif H_given:
-                H_norm = (self.H - h_mean) / h_std
-                object.__setattr__(
-                    self, 'T',
-                    float(np.polyval(coeffs['inverse_enthalpy'], H_norm)))
-            else:
-                raise ValueError(
-                    f"State '{self.StatePointName}': Therminol66 requires "
-                    f"T or H as one of the two inputs."
-                )
-
-            T = self.T
-            T_min = data.get('Tmin', -3.0) + 273.15
-            T_max = data.get('Tmax', 350.0) + 273.15
-            if not (T_min <= T <= T_max):
-                warnings.warn(
-                    f"State '{self.StatePointName}': T = {T - 273.15:.1f} °C "
-                    f"is outside the fitted Therminol-66 range "
-                    f"({T_min - 273.15:.0f} – {T_max - 273.15:.0f} °C). "
-                    f"Properties are extrapolated and may be unreliable."
-                )
-
-            object.__setattr__(self, 'D',  float(np.polyval(coeffs['density'],      T)))
-            object.__setattr__(self, 'Cp', float(np.polyval(coeffs['specific_heat'], T)))
-            if not H_given:
-                object.__setattr__(
-                    self, 'H', float(np.polyval(coeffs['enthalpy'], T)))
-            object.__setattr__(
-                self, 'S',
-                float(self._t66_entropy(coeffs['specific_heat'], entropy_spec, T)))
-
-            # Therminol-66 is modelled as a single-phase incompressible
-            # liquid: vapour quality is undefined.
-            object.__setattr__(self, 'Q', None)
-            object.__setattr__(self, 'phase', 'Incompressible liquid')
-
-            # exergy
-            if self.DeadStates:
-                T0 = self.DeadStates['T0']
-                h0 = float(np.polyval(coeffs['enthalpy'], T0))
-                s0 = float(self._t66_entropy(
-                    coeffs['specific_heat'], entropy_spec, T0))
-                ex = (self.H - h0) - T0 * (self.S - s0)
-                Ex = (self.Mass_flowrate * ex
-                      if self.Mass_flowrate is not None else None)
-                object.__setattr__(self, 'ex', ex)
-                object.__setattr__(self, 'Ex', Ex)
-
-            object.__setattr__(self, 'Solution_Status', True)
-
-        finally:
-            object.__setattr__(self, '_initialising', False)
-
-    # ------------------------------------------------------------------ #
     #  public helper (used by Separator, etc.)
     # ------------------------------------------------------------------ #
-    @staticmethod
-    def _is_therminol66(fluid):
-        """True when `fluid` names the built-in Therminol-66 correlation."""
-        return isinstance(fluid, str) and fluid.strip().lower() in _T66_ALIASES
-
     @staticmethod
     def _is_nh3h2o(fluid):
         """True when `fluid` is an NH3H2OFluid (binary mixture) tag."""
@@ -523,8 +413,6 @@ class Prop:
     def calculate_missing_properties(self):
         if self._is_nh3h2o(self.fluid):
             self._calc_nh3h2o()
-        elif self._is_therminol66(self.fluid):
-            self._calc_therminol66()
         else:
             self._calc_coolprop()
 

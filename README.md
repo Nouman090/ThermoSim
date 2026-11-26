@@ -14,7 +14,8 @@ properties.
 
 - **State-point calculation** from any two independent properties
   (P, T, H, S, Q, D) for water, refrigerants, air and every other CoolProp
-  fluid, plus a built-in Therminol-66 correlation
+  fluid, including CoolProp's incompressible liquids such as Therminol 66
+  (`'INCOMP::T66'`, or the short name `'T66'`)
 - **Components**: Turbine, Pump, Compressor, Heat Exchanger, TES, Mixer,
   Splitter, Separator, Expansion Valve, Pipe, Source, Sink
 - **Pinch analysis** for heat exchangers, with a generalised solver that

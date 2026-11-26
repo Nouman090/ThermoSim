@@ -23,6 +23,7 @@ from datetime import datetime
 from dataclasses import dataclass
 
 from .heat_exchangers import _phase_boundary_alphas
+from .state import is_incompressible as _is_incomp_fluid
 
 
 @dataclass
@@ -39,6 +40,8 @@ class PlotConfig:
     # ordinary compressible CoolProp fluid (and CoolProp fluid names are
     # case-insensitive), so anyone writing 'Water' instead of 'water' got a
     # silently dome-less diagram.  Only the INCOMP:: backend entry belongs.
+    # Any CoolProp ``INCOMP::`` fluid is also treated as dome-less (see
+    # _is_incompressible below); this set keeps the legacy short names.
     INCOMPRESSIBLE_FLUIDS = {'Therminol66', 'T66', 'DowQ',
                              'INCOMP::T66', 'INCOMP::Water'}
     
@@ -96,9 +99,15 @@ class CyclePlotter:
             warnings.warn(f"Point has no attribute '{prop_name}'")
             return default
 
+    def _is_incompressible(self, fluid):
+        """True for a dome-less liquid: a CoolProp ``INCOMP::`` fluid or
+        one of the legacy names in ``INCOMPRESSIBLE_FLUIDS``."""
+        return (fluid in self.config.INCOMPRESSIBLE_FLUIDS
+                or _is_incomp_fluid(fluid))
+
     def _can_draw_dome(self, fluid):
         """Check if saturation dome can be drawn for this fluid"""
-        if not fluid or fluid in self.config.INCOMPRESSIBLE_FLUIDS:
+        if not fluid or self._is_incompressible(fluid):
             return False
         try:
             CP.PropsSI('TCRIT', fluid)
@@ -229,9 +238,9 @@ class CyclePlotter:
         fluid = getattr(pt_a, 'fluid', None)
         if fluid is None or fluid != getattr(pt_b, 'fluid', None):
             return endpoints
-        # Incompressible correlations are handled by Prop, not CoolProp's
-        # PropsSI, and they never cross a dome -- a straight line is right.
-        if fluid in self.config.INCOMPRESSIBLE_FLUIDS:
+        # Incompressible liquids never cross a dome -- a straight line is
+        # right.
+        if self._is_incompressible(fluid):
             return endpoints
 
         fracs = sorted(set(
