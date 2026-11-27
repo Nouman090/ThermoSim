@@ -572,6 +572,31 @@ class HeatExchanger(Component):
 
     # ── pinch check helpers ───────────────────────────────────────────────────
 
+    def _profile_min_dT(self):
+        """
+        Minimum approach over the whole profile of the present state, or None
+        if the state is incomplete or the profile cannot be built.
+        """
+        for pt in (self.Hot_In, self.Hot_Out, self.Cold_In, self.Cold_Out):
+            if pt is None or pt.H is None:
+                return None
+        mh, mc = self.Hot_Mass_flowrate, self.Cold_Mass_flowrate
+        if not mh or not mc:
+            return None
+
+        try:
+            dP_h = self.Hot_In.P - self.Hot_Out.P
+            dP_c = self.Cold_In.P - self.Cold_Out.P
+            Q = mh * (self.Hot_In.H - self.Hot_Out.H)
+            _, _, _, min_dT = self._build_profile(
+                Q, dP_h, dP_c,
+                self.Hot_Out.H, self.Cold_In.H,
+                self.Hot_Out.P, self.Cold_In.P,
+                mh, mc, direction='cold_to_hot')
+        except Exception:
+            return None
+        return float(min_dT)
+
     def _check_PPT_profile(self, warn_only=True):
         """
         Verify the pinch along the WHOLE exchanger, not only at its ends.
@@ -608,26 +633,11 @@ class HeatExchanger(Component):
         """
         if self.HEX_type == 'SimpleHEX':
             return None
-        for pt in (self.Hot_In, self.Hot_Out, self.Cold_In, self.Cold_Out):
-            if pt is None or pt.H is None:
-                return None
-        mh, mc = self.Hot_Mass_flowrate, self.Cold_Mass_flowrate
-        if not mh or not mc:
-            return None
-
-        try:
-            dP_h = self.Hot_In.P - self.Hot_Out.P
-            dP_c = self.Cold_In.P - self.Cold_Out.P
-            Q = mh * (self.Hot_In.H - self.Hot_Out.H)
-            _, _, _, min_dT = self._build_profile(
-                Q, dP_h, dP_c,
-                self.Hot_Out.H, self.Cold_In.H,
-                self.Hot_Out.P, self.Cold_In.P,
-                mh, mc, direction='cold_to_hot')
-        except Exception:
+        min_dT = self._profile_min_dT()
+        if min_dT is None:
             return None                      # never fail the solve on a check
 
-        self.min_dT = float(min_dT)
+        self.min_dT = min_dT
         tol = max(1e-2, 1e-3 * self.PPT)
         if min_dT <= self.PPT - tol:
             crossed = min_dT < 0
@@ -1407,6 +1417,7 @@ class HeatExchanger(Component):
             )
 
         last_error = None
+        below_ppt = None    # first anchor that solved but is under the approach
         for known_var, resolves_var in viable:
             try:
                 anchor_idx = self._apply_anchor(known_var, resolves_var)
@@ -1416,12 +1427,30 @@ class HeatExchanger(Component):
                           f"remaining: {set(remaining)}")
                 self._solve_2_unknown(remaining, dP_h, dP_c,
                                       exclude_idx=anchor_idx)
-                return
             except Exception as exc:
                 # Roll back and try the next anchor (the logic table lists two
                 # valid anchors for most solvable rows).
                 self._restore(snap)
                 last_error = exc
+                continue
+
+            # The anchor assumes the pinch is at that terminal.  Where a second
+            # anchor is admissible (double_pipe), a solve whose profile falls
+            # below PPT shows the assumption was wrong, so try the other one.
+            if len(viable) == 1:
+                return
+            min_dT = self._profile_min_dT()
+            if min_dT is None or min_dT > self.PPT - max(1e-2, 1e-3 * self.PPT):
+                return
+            if below_ppt is None:
+                below_ppt = self._snapshot()
+            self._restore(snap)
+
+        if below_ppt is not None:
+            # No anchor meets PPT: keep the first solve.  The post-solve check
+            # warns, or raises if strict_pinch is set.
+            self._restore(below_ppt)
+            return
 
         raise ValueError(
             f"[{self.ID}] All {len(viable)} anchor(s) failed for unknowns="

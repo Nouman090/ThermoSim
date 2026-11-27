@@ -12,7 +12,11 @@ and the solver must recover them.
 
     2 unknowns: C(6,2) = 15 specifications -> 12 solved, 3 refused
     3 unknowns: C(6,3) = 20 specifications ->  8 solved, 12 refused
-                (for both HEX_type='Evaporator' and 'Condenser')
+                (for HEX_type='Evaporator', 'Condenser' and 'double_pipe')
+
+For 'double_pipe' either end may carry the anchor, so a three-unknown
+specification can have two double-pinch designs.  It is run against both the
+hot-end and the cold-end reference.
 
 Acceptance criteria
     * solved   : every unknown recovered to a relative error below
@@ -214,6 +218,106 @@ def test_matrix_sizes():
     """12 of 15 and 8 of 20 specifications are admissible."""
     assert len(list(itertools.combinations(NAMES, 2))) - len(REFUSED_2) == 12
     assert len(SOLVED_3) == 8 and len(list(itertools.combinations(NAMES, 3))) == 20
+
+
+# --------------------------------------------------------------------------
+#  Counter-flow (double_pipe): all 15 + 20 specifications
+# --------------------------------------------------------------------------
+def fine_grid_approaches(ref, got, n=4001):
+    """(hot-end, cold-end, minimum) approach of a returned state, evaluated
+    with CoolProp alone, independently of the solver's profile."""
+    fh, ph, fc, pc = ref['fluids']
+    q_hot = got['mh'] * (got['H_hi'] - got['H_ho'])
+    dT = []
+    for i in range(n):
+        q = q_hot * i / (n - 1)
+        dT.append(PS('T', 'H', got['H_ho'] + q / got['mh'], 'P', ph, fh)
+                  - PS('T', 'H', got['H_ci'] + q / got['mc'], 'P', pc, fc))
+    return dT[-1], dT[0], min(dT)
+
+
+@pytest.mark.parametrize('unknown', list(itertools.combinations(NAMES, 2)),
+                         ids=lambda u: '{' + ','.join(u) + '}')
+def test_two_unknown_matrix_double_pipe(unknown):
+    unknown = set(unknown)
+    M, hx = build(dict(REF_2, hex='double_pipe', heat_added=None), unknown)
+    if frozenset(unknown) in REFUSED_2:
+        before = contents(M)
+        with pytest.raises(ValueError, match=REFUSED_2[frozenset(unknown)]):
+            hx.Cal()
+        assert contents(M) == before
+        return
+    w = solve_quietly(hx)
+    got, truth = recovered(M), REF_2['truth']
+    for n in unknown:
+        assert got[n] == pytest.approx(truth[n], rel=REL_TOL_2), n
+    assert hx.min_dT == pytest.approx(PPT, abs=DT_TOL)
+    assert not w, [str(x.message) for x in w]
+
+
+#: The cold-end reference with these unknowns also admits a hot-end double
+#: pinch, which the solver reaches first.  It is checked independently.
+OTHER_END = {('Condenser', frozenset({'H_ho', 'H_co', 'mh'})),
+             ('Condenser', frozenset({'H_ho', 'H_co', 'mc'}))}
+
+
+@pytest.mark.parametrize('reference', ['Evaporator', 'Condenser'])
+@pytest.mark.parametrize('unknown', list(itertools.combinations(NAMES, 3)),
+                         ids=lambda u: '{' + ','.join(u) + '}')
+def test_three_unknown_matrix_double_pipe(reference, unknown):
+    ref = dict(REF_3[reference], hex='double_pipe', heat_added=None)
+    unknown = set(unknown)
+    M, hx = build(ref, unknown)
+    if frozenset(unknown) not in SOLVED_3:
+        before = contents(M)
+        with pytest.raises(ValueError, match='Unsolvable 3-unknown|No valid anchor'):
+            hx.Cal()
+        assert contents(M) == before
+        return
+    w = solve_quietly(hx)
+    got, truth = recovered(M), ref['truth']
+    assert not w, [str(x.message) for x in w]
+    assert hx.min_dT == pytest.approx(PPT, abs=DT_TOL)
+
+    hot_end, cold_end, lowest = fine_grid_approaches(ref, got)
+    assert lowest >= PPT - 1e-2
+    assert got['mh'] * (got['H_hi'] - got['H_ho']) == pytest.approx(
+        got['mc'] * (got['H_co'] - got['H_ci']), rel=1e-4)
+
+    if (reference, frozenset(unknown)) in OTHER_END:
+        assert hot_end == pytest.approx(PPT, abs=1e-2)
+        assert cold_end > PPT + 1.0
+    else:
+        for n in unknown:
+            assert got[n] == pytest.approx(truth[n], rel=REL_TOL_3), n
+
+
+@pytest.mark.parametrize('strict', [False, True])
+def test_no_anchor_meets_ppt(strict):
+    """Both anchors solve but neither profile reaches PPT (forced here): the
+    first solve is kept with a warning, or refused under strict_pinch."""
+    ref = dict(REF_3['Evaporator'], hex='double_pipe', heat_added=None)
+    M, hx = build(ref, {'H_ci', 'H_co', 'mh'}, strict=strict)
+    entry = contents(M)
+    original = hx._solve_2_unknown
+    solved = []
+
+    def recording(*args, **kwargs):
+        original(*args, **kwargs)
+        solved.append((hx.Cold_In.H, hx.Cold_Out.H, hx.Hot_Mass_flowrate))
+
+    hx._solve_2_unknown = recording
+    hx._profile_min_dT = lambda: PPT - 1.0
+    if strict:
+        with pytest.raises(ValueError, match='pinch violation'):
+            hx.Cal()
+        assert contents(M) == entry
+        return
+    w = solve_quietly(hx)
+    assert len(solved) == 2, 'both anchors should have been tried'
+    assert any('pinch violation' in str(x.message) for x in w)
+    assert (M.Point['ci'].H, M.Point['co'].H,
+            M.Point['hi'].Mass_flowrate) == pytest.approx(solved[0])
 
 
 # --------------------------------------------------------------------------
