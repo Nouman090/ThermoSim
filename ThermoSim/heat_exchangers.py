@@ -1062,8 +1062,14 @@ class HeatExchanger(Component):
 
             Max_H_ci = self.Model.Prop(CI.fluid,StatePointName='_h_bound',P=CI.P, T = _safe_T_max(CI.fluid, CI.P)).H
             Min_H_ci = self._min_H(CI, margin=0.0)
-            H_lo = HO.H + mc*(CO.H - Max_H_ci)/mh+1e-3
-            H_hi_bound = HO.H + mc*(CO.H - Min_H_ci)/mh-1e-3
+            # The cold-inlet limits alone can map far outside the hot fluid's
+            # range when mc/mh is large, leaving BOTH ends invalid and no sign
+            # change to bracket.  The hot inlet must also lie above the hot
+            # outlet and below the hot fluid's own temperature limit.
+            Max_H_hi = self.Model.Prop(HI.fluid, StatePointName='_hi_bound',
+                                       P=HI.P, T=_safe_T_max(HI.fluid, HI.P)).H
+            H_lo = max(HO.H + mc*(CO.H - Max_H_ci)/mh, HO.H) + 1e-3
+            H_hi_bound = min(HO.H + mc*(CO.H - Min_H_ci)/mh, Max_H_hi) - 1e-3
             sign_factor = _fun_sign_fac(f,H_lo,H_hi_bound)
             try:                
                 H_sol = brentq(f, H_lo, H_hi_bound, xtol=1e-4, rtol=1e-4)

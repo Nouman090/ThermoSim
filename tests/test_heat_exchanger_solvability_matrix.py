@@ -191,6 +191,25 @@ def test_two_unknown_matrix(unknown):
     assert not w, [str(x.message) for x in w]
 
 
+@pytest.mark.parametrize('unknown', list(itertools.combinations(NAMES, 2)),
+                         ids=lambda u: '{' + ','.join(u) + '}')
+def test_two_unknown_matrix_condenser(unknown):
+    ref, unknown = REF_3['Condenser'], set(unknown)
+    M, hx = build(ref, unknown)
+    if frozenset(unknown) in REFUSED_2:
+        before = contents(M)
+        with pytest.raises(ValueError, match=REFUSED_2[frozenset(unknown)]):
+            hx.Cal()
+        assert contents(M) == before
+        return
+    w = solve_quietly(hx)
+    got, truth = recovered(M), ref['truth']
+    for n in unknown:
+        assert got[n] == pytest.approx(truth[n], rel=REL_TOL_2), n
+    assert hx.min_dT == pytest.approx(PPT, abs=DT_TOL)
+    assert not w, [str(x.message) for x in w]
+
+
 # --------------------------------------------------------------------------
 #  Three unknowns: 20 specifications x {Evaporator, Condenser}
 # --------------------------------------------------------------------------
