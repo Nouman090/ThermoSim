@@ -105,6 +105,26 @@ def _orc_condenser_cold_end_anchor():
                 fluids=('R245fa', ph, 'Water', pc), hex='Condenser', heat_added=None)
 
 
+def _condenser_interior_pinch():
+    """The same condenser with colder water (17 C), so the 8 K approach occurs
+    only at the dew point (used for the 2-unknown specifications).  The
+    reference above also has 8 K at the cold end; two unknowns that leave that
+    approach fixed would then have infinitely many solutions."""
+    ph, pc = 3e5, 2e5
+    h_hi = PS('H', 'T', 343.15, 'P', ph, 'R245fa')
+    h_ho = PS('H', 'T', 308.15, 'P', ph, 'R245fa')
+    h_ci = PS('H', 'T', 290.15, 'P', pc, 'Water')
+    mh = 2.0
+    q = mh * (h_hi - h_ho)
+    h_dew = PS('H', 'P', ph, 'Q', 1, 'R245fa')
+    t_dew = PS('T', 'P', ph, 'Q', 1, 'R245fa')
+    q_dew = mh * (h_dew - h_ho)
+    mc = brentq(lambda m: t_dew - PS('T', 'H', h_ci + q_dew / m, 'P', pc, 'Water') - 8.0, 0.5, 200)
+    return dict(truth=dict(H_hi=h_hi, H_ho=h_ho, H_ci=h_ci, H_co=h_ci + q / mc, mh=mh, mc=mc),
+                fluids=('R245fa', ph, 'Water', pc), hex='Condenser', heat_added=None)
+
+
+REF_2_CONDENSER = _condenser_interior_pinch()
 REF_2 = _orc_evaporator_interior_pinch()
 REF_3 = {'Evaporator': _orc_evaporator_hot_end_anchor(),
          'Condenser': _orc_condenser_cold_end_anchor()}
@@ -194,7 +214,7 @@ def test_two_unknown_matrix(unknown):
 @pytest.mark.parametrize('unknown', list(itertools.combinations(NAMES, 2)),
                          ids=lambda u: '{' + ','.join(u) + '}')
 def test_two_unknown_matrix_condenser(unknown):
-    ref, unknown = REF_3['Condenser'], set(unknown)
+    ref, unknown = REF_2_CONDENSER, set(unknown)
     M, hx = build(ref, unknown)
     if frozenset(unknown) in REFUSED_2:
         before = contents(M)
