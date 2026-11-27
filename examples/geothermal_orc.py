@@ -11,7 +11,7 @@ J/kg, mass flow rate in kg/s.  The working-fluid mass flow rate is NOT given:
 the evaporator derives it, together with the brine outlet state, from the
 energy balance and the 8 K minimum approach (two unknowns).
 
-Expected output (ThermoSim 3.5.0, CoolProp 8.0.0), also asserted below:
+Expected output (ThermoSim 3.5.1, CoolProp 8.0.0), also asserted below:
     working-fluid mass flow rate   4.735 kg/s
     brine outlet temperature     104.78 C
     evaporator minimum approach    8.00 K

@@ -1,5 +1,29 @@
 
 # Changelog
+## [3.5.1] - Unreleased
+
+Two heat-exchanger solver fixes. Results for the `Evaporator` and `Condenser`
+types that solved in 3.5.0 are unchanged: the validation scripts, the CGAM
+benchmark and `examples/geothermal_orc.py` give identical output.
+
+### Fixed
+- **`double_pipe` with three unknowns kept a design below the approach.** It
+  returned on the first anchor that solved, so when the pinch was at the other
+  end the result had a minimum approach under `PPT` (7.64 to 7.92 K against
+  8 K, with only a warning) although the second anchor met it. A solve whose
+  profile falls below `PPT` is now set aside and the other anchor is tried; if
+  neither meets it, the first is kept and reported as before. `Evaporator` and
+  `Condenser` have one anchor and are unaffected.
+- **Intermittent `no root found` for the unknowns `{H_hi, H_ci}`.** With a
+  large `mc/mh` both ends of the search bracket lay outside the hot fluid's
+  range, so `brentq` could not bracket the root and the random fallback search
+  succeeded only sometimes. The bracket is now clipped to the physical range of
+  the hot inlet.
+
+### Tests
+- The case-to-test matrix now covers two and three unknowns for all three
+  exchanger types (68 to 140 tests; 274 in the suite).
+
 ## [3.5.0] - 2026-10-30
 
 ### Fixed

@@ -14,7 +14,7 @@ Usage
     from ThermoSim.plotting import CyclePlotter
     from ThermoSim.analysis import SensitivityAnalyzer
 """
-__version__ = "3.5.0"
+__version__ = "3.5.1"
 
 from .model import ThermodynamicModel
 from .state import Prop
