@@ -1,0 +1,407 @@
+[
+ {
+  "k": 2,
+  "i": 1,
+  "u": [
+   "H_hi",
+   "H_ho"
+  ],
+  "status": "solved",
+  "detail": "maxrel=1.0e-05",
+  "t": 0.04847463999976753
+ },
+ {
+  "k": 2,
+  "i": 2,
+  "u": [
+   "H_hi",
+   "H_ci"
+  ],
+  "status": "solved",
+  "detail": "maxrel=3.7e-05",
+  "t": 0.032492861000264384
+ },
+ {
+  "k": 2,
+  "i": 3,
+  "u": [
+   "H_hi",
+   "H_co"
+  ],
+  "status": "solved, different answer",
+  "detail": "maxrel=2.7e-01",
+  "t": 0.02625060799982748
+ },
+ {
+  "k": 2,
+  "i": 4,
+  "u": [
+   "H_hi",
+   "mh"
+  ],
+  "status": "solved",
+  "detail": "maxrel=9.7e-05",
+  "t": 0.03663691200017638
+ },
+ {
+  "k": 2,
+  "i": 5,
+  "u": [
+   "H_hi",
+   "mc"
+  ],
+  "status": "solved",
+  "detail": "maxrel=9.7e-05",
+  "t": 0.02696384599994417
+ },
+ {
+  "k": 2,
+  "i": 6,
+  "u": [
+   "H_ho",
+   "H_ci"
+  ],
+  "status": "not solved",
+  "detail": "status 1",
+  "t": 0.02588402599985784
+ },
+ {
+  "k": 2,
+  "i": 7,
+  "u": [
+   "H_ho",
+   "H_co"
+  ],
+  "status": "solved",
+  "detail": "maxrel=2.0e-05",
+  "t": 0.038387660999887885
+ },
+ {
+  "k": 2,
+  "i": 8,
+  "u": [
+   "H_ho",
+   "mh"
+  ],
+  "status": "solved",
+  "detail": "maxrel=7.5e-05",
+  "t": 0.02634003599996504
+ },
+ {
+  "k": 2,
+  "i": 9,
+  "u": [
+   "H_ho",
+   "mc"
+  ],
+  "status": "solved",
+  "detail": "maxrel=7.5e-05",
+  "t": 0.025903506000304333
+ },
+ {
+  "k": 2,
+  "i": 10,
+  "u": [
+   "H_ci",
+   "H_co"
+  ],
+  "status": "solved",
+  "detail": "maxrel=3.7e-05",
+  "t": 0.03408135800009404
+ },
+ {
+  "k": 2,
+  "i": 11,
+  "u": [
+   "H_ci",
+   "mh"
+  ],
+  "status": "solved",
+  "detail": "maxrel=7.5e-05",
+  "t": 0.025559865000104764
+ },
+ {
+  "k": 2,
+  "i": 12,
+  "u": [
+   "H_ci",
+   "mc"
+  ],
+  "status": "solved",
+  "detail": "maxrel=7.5e-05",
+  "t": 0.02904856200029826
+ },
+ {
+  "k": 2,
+  "i": 13,
+  "u": [
+   "H_co",
+   "mh"
+  ],
+  "status": "solved",
+  "detail": "maxrel=9.7e-05",
+  "t": 0.03744924200009336
+ },
+ {
+  "k": 2,
+  "i": 14,
+  "u": [
+   "H_co",
+   "mc"
+  ],
+  "status": "solved",
+  "detail": "maxrel=9.7e-05",
+  "t": 0.03728875400020115
+ },
+ {
+  "k": 2,
+  "i": 15,
+  "u": [
+   "mh",
+   "mc"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.009798134999982722
+ },
+ {
+  "k": 3,
+  "i": 1,
+  "u": [
+   "H_hi",
+   "H_ho",
+   "H_ci"
+  ],
+  "status": "solved, different answer",
+  "detail": "maxrel=9.6e-01",
+  "t": 0.06022289800012004
+ },
+ {
+  "k": 3,
+  "i": 2,
+  "u": [
+   "H_hi",
+   "H_ho",
+   "H_co"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.5125389989998439
+ },
+ {
+  "k": 3,
+  "i": 3,
+  "u": [
+   "H_hi",
+   "H_ho",
+   "mh"
+  ],
+  "status": "solved",
+  "detail": "maxrel=5.9e-06",
+  "t": 0.06382489799989344
+ },
+ {
+  "k": 3,
+  "i": 4,
+  "u": [
+   "H_hi",
+   "H_ho",
+   "mc"
+  ],
+  "status": "solved",
+  "detail": "maxrel=5.9e-06",
+  "t": 0.06374807899965163
+ },
+ {
+  "k": 3,
+  "i": 5,
+  "u": [
+   "H_hi",
+   "H_ci",
+   "H_co"
+  ],
+  "status": "solved, different answer",
+  "detail": "maxrel=3.3e-01",
+  "t": 0.03064698700018198
+ },
+ {
+  "k": 3,
+  "i": 6,
+  "u": [
+   "H_hi",
+   "H_ci",
+   "mh"
+  ],
+  "status": "solved",
+  "detail": "maxrel=5.9e-06",
+  "t": 0.05564201600009255
+ },
+ {
+  "k": 3,
+  "i": 7,
+  "u": [
+   "H_hi",
+   "H_ci",
+   "mc"
+  ],
+  "status": "solved",
+  "detail": "maxrel=5.9e-06",
+  "t": 0.05640500699973927
+ },
+ {
+  "k": 3,
+  "i": 8,
+  "u": [
+   "H_hi",
+   "H_co",
+   "mh"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.19460021199984112
+ },
+ {
+  "k": 3,
+  "i": 9,
+  "u": [
+   "H_hi",
+   "H_co",
+   "mc"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.21020222000015565
+ },
+ {
+  "k": 3,
+  "i": 10,
+  "u": [
+   "H_hi",
+   "mh",
+   "mc"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.012206546000015805
+ },
+ {
+  "k": 3,
+  "i": 11,
+  "u": [
+   "H_ho",
+   "H_ci",
+   "H_co"
+  ],
+  "status": "solved, different answer",
+  "detail": "maxrel=9.6e-01",
+  "t": 0.06305801000007705
+ },
+ {
+  "k": 3,
+  "i": 12,
+  "u": [
+   "H_ho",
+   "H_ci",
+   "mh"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.011350162999860913
+ },
+ {
+  "k": 3,
+  "i": 13,
+  "u": [
+   "H_ho",
+   "H_ci",
+   "mc"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.017339601000003313
+ },
+ {
+  "k": 3,
+  "i": 14,
+  "u": [
+   "H_ho",
+   "H_co",
+   "mh"
+  ],
+  "status": "solved",
+  "detail": "maxrel=5.9e-06",
+  "t": 0.099912076000237
+ },
+ {
+  "k": 3,
+  "i": 15,
+  "u": [
+   "H_ho",
+   "H_co",
+   "mc"
+  ],
+  "status": "solved",
+  "detail": "maxrel=5.9e-06",
+  "t": 0.08025687700001072
+ },
+ {
+  "k": 3,
+  "i": 16,
+  "u": [
+   "H_ho",
+   "mh",
+   "mc"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.011921899000299163
+ },
+ {
+  "k": 3,
+  "i": 17,
+  "u": [
+   "H_ci",
+   "H_co",
+   "mh"
+  ],
+  "status": "solved",
+  "detail": "maxrel=5.9e-06",
+  "t": 0.03833286799999769
+ },
+ {
+  "k": 3,
+  "i": 18,
+  "u": [
+   "H_ci",
+   "H_co",
+   "mc"
+  ],
+  "status": "solved",
+  "detail": "maxrel=5.9e-06",
+  "t": 0.037791637999816885
+ },
+ {
+  "k": 3,
+  "i": 19,
+  "u": [
+   "H_ci",
+   "mh",
+   "mc"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.010660819999884552
+ },
+ {
+  "k": 3,
+  "i": 20,
+  "u": [
+   "H_co",
+   "mh",
+   "mc"
+  ],
+  "status": "not solved",
+  "detail": "status 3",
+  "t": 0.011838058999728673
+ }
+]

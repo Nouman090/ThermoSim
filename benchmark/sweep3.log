@@ -1,0 +1,20 @@
+3-unk # 1 {H_hi,H_ho,H_ci}: refused    0.0s [E] Unsolvable 3-unknown combination {'H_ci', 'H_ho', 'H_hi'}: every available anchor reduces it to an unsolvable 2-unknown case ({'H_hi': {'H_ci', 'H_ho'}}). No state po
+3-unk # 2 {H_hi,H_ho,H_co}: refused    0.0s [E] No valid anchor exists for unknowns={'H_co', 'H_ho', 'H_hi'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalp
+3-unk # 3 {H_hi,H_ho,mh}: refused    0.0s [E] All 1 anchor(s) failed for unknowns={'mh', 'H_ho', 'H_hi'}. Last error: [E] Cannot apply the H_co → H_hi anchor: hot-outlet temperature is unknown. The PPT diagonal n
+3-unk # 4 {H_hi,H_ho,mc}: refused    0.0s [E] All 1 anchor(s) failed for unknowns={'mc', 'H_ho', 'H_hi'}. Last error: [E] Cannot apply the H_co → H_hi anchor: hot-outlet temperature is unknown. The PPT diagonal n
+3-unk # 5 {H_hi,H_ci,H_co}: refused    0.0s [E] No valid anchor exists for unknowns={'H_ci', 'H_co', 'H_hi'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalp
+3-unk # 6 {H_hi,H_ci,mh}: refused  117.5s [E] All 1 anchor(s) failed for unknowns={'H_ci', 'mh', 'H_hi'}. Last error: robust_solver: no root found in [80675.8, 553643]. Best residual = 3.51214 K at x = 80676.
+3-unk # 7 {H_hi,H_ci,mc}: refused   91.5s [E] All 1 anchor(s) failed for unknowns={'H_ci', 'mc', 'H_hi'}. Last error: robust_solver: no root found in [80675.8, 480143]. Best residual = 3.51214 K at x = 80675.9.
+3-unk # 8 {H_hi,H_co,mh}: refused    0.0s [E] No valid anchor exists for unknowns={'H_co', 'mh', 'H_hi'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy 
+3-unk # 9 {H_hi,H_co,mc}: refused    0.0s [E] No valid anchor exists for unknowns={'H_co', 'mc', 'H_hi'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy 
+3-unk #10 {H_hi,mh,mc}: refused    0.0s [E] Unsolvable 3-unknown combination {'mc', 'mh', 'H_hi'}: every available anchor reduces it to an unsolvable 2-unknown case ({'H_hi': {'mh', 'mc'}}). No state points wer
+3-unk #11 {H_ho,H_ci,H_co}: refused    0.0s [E] Unsolvable 3-unknown combination {'H_ci', 'H_ho', 'H_co'}: every available anchor reduces it to an unsolvable 2-unknown case ({'H_co': {'H_ci', 'H_ho'}}). No state po
+3-unk #12 {H_ho,H_ci,mh}: refused    0.0s [E] No valid anchor exists for unknowns={'H_ci', 'mh', 'H_ho'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy 
+3-unk #13 {H_ho,H_ci,mc}: refused    0.0s [E] No valid anchor exists for unknowns={'H_ci', 'H_ho', 'mc'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy 
+3-unk #14 {H_ho,H_co,mh}: solved     4.4s maxrel=1.46e-01 minDT=8.000 warn=0
+3-unk #15 {H_ho,H_co,mc}: solved     6.5s maxrel=1.27e-01 minDT=8.000 warn=0
+3-unk #16 {H_ho,mh,mc}: refused    0.0s [E] No valid anchor exists for unknowns={'mh', 'H_ho', 'mc'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy th
+3-unk #17 {H_ci,H_co,mh}: solved     6.5s maxrel=1.46e-01 minDT=8.000 warn=0
+3-unk #18 {H_ci,H_co,mc}: solved     6.0s maxrel=1.27e-01 minDT=8.000 warn=0
+3-unk #19 {H_ci,mh,mc}: refused    0.0s [E] No valid anchor exists for unknowns={'H_ci', 'mh', 'mc'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy th
+3-unk #20 {H_co,mh,mc}: refused    0.0s [E] Unsolvable 3-unknown combination {'H_co', 'mh', 'mc'}: every available anchor reduces it to an unsolvable 2-unknown case ({'H_co': {'mh', 'mc'}}). No state points wer

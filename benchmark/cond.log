@@ -1,0 +1,9 @@
+truth: Q=434.2 kW mc=8.7389 kg/s T_co=38.89 C  dT cold end=8.000  dT dew=8.000  min over profile=8.000 K
+Condenser {H_ci,H_hi,mh}: SOLVED  6.4s maxrel=9.5e-08 minDT=8.000 warns=0
+Condenser {H_ci,H_hi,mc}: SOLVED  6.1s maxrel=2.8e-06 minDT=8.000 warns=0
+Condenser {H_ci,H_co,mh}: REFUSED  0.0s [C] All 1 anchor(s) failed for unknowns={'H_co', 'H_ci', 'mh'}. Last error: [C] Cannot apply the H_ho → H_ci anchor: cold-outlet temperature is unknown. The PPT diagonal needs a resolved temperature a
+Condenser {H_ci,H_co,mc}: REFUSED  0.0s [C] All 1 anchor(s) failed for unknowns={'mc', 'H_co', 'H_ci'}. Last error: [C] Cannot apply the H_ho → H_ci anchor: cold-outlet temperature is unknown. The PPT diagonal needs a resolved temperature a
+Condenser {H_hi,H_ho,mh}: SOLVED  6.2s maxrel=9.5e-08 minDT=8.000 warns=0
+Condenser {H_hi,H_ho,mc}: SOLVED  6.2s maxrel=2.8e-06 minDT=8.000 warns=0
+Condenser {H_co,H_ho,mh}: SOLVED  4.9s maxrel=3.7e-08 minDT=8.000 warns=0
+Condenser {H_co,H_ho,mc}: SOLVED  4.7s maxrel=3.7e-08 minDT=8.000 warns=0

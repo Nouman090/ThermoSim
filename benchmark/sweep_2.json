@@ -1,0 +1,224 @@
+[
+ {
+  "status": "solved",
+  "time": 4.834518204999995,
+  "min_dT": 7.999895275143956,
+  "maxrel": 9.261309136724748e-06,
+  "warn": 0,
+  "got": {
+   "H_hi": 546543.0712564148,
+   "H_ho": 439624.7024482553
+  },
+  "case": 1,
+  "unknowns": [
+   "H_hi",
+   "H_ho"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 5.2075177330000315,
+  "min_dT": 8.000227347438397,
+  "maxrel": 4.549373325483979e-05,
+  "warn": 0,
+  "got": {
+   "H_hi": 546544.477922645,
+   "H_ci": 254312.92754173235
+  },
+  "case": 2,
+  "unknowns": [
+   "H_hi",
+   "H_ci"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 7.871299999351322e-05,
+  "msg": "[E] Unsolvable 2-unknown combination {'H_hi', 'H_co'}: the known enthalpies both sit at the hot-outlet/cold-inlet end, so a solution may exist but is not reliable (case 8",
+  "case": 3,
+  "unknowns": [
+   "H_hi",
+   "H_co"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 5.078364406999981,
+  "min_dT": 8.000073693071556,
+  "maxrel": 0.00010341607135107011,
+  "warn": 0,
+  "got": {
+   "mh": 9.99896583928649,
+   "H_hi": 546550.0580151036
+  },
+  "case": 4,
+  "unknowns": [
+   "H_hi",
+   "mh"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 6.977086569999983,
+  "min_dT": 8.00003840030098,
+  "maxrel": 0.00010022360557380282,
+  "warn": 0,
+  "got": {
+   "H_hi": 546549.7155382724,
+   "mc": 4.73517452870531
+  },
+  "case": 5,
+  "unknowns": [
+   "H_hi",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 7.010800004536577e-05,
+  "msg": "[E] Unsolvable 2-unknown combination {'H_ci', 'H_ho'}: the known enthalpies both sit at the hot-inlet/cold-outlet end, so a solution may exist but is not reliable (case 9",
+  "case": 6,
+  "unknowns": [
+   "H_ho",
+   "H_ci"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 6.533528568999941,
+  "min_dT": 8.000021673621461,
+  "maxrel": 2.026484956577854e-05,
+  "warn": 0,
+  "got": {
+   "H_ho": 439625.237862613,
+   "H_co": 480133.44427992497
+  },
+  "case": 7,
+  "unknowns": [
+   "H_ho",
+   "H_co"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 4.320026584999937,
+  "min_dT": 7.999957377291139,
+  "maxrel": 7.195303588289904e-05,
+  "warn": 0,
+  "got": {
+   "mh": 10.000719530358829,
+   "H_ho": 439628.3235334141
+  },
+  "case": 8,
+  "unknowns": [
+   "H_ho",
+   "mh"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 6.498248672000045,
+  "min_dT": 7.998951382354846,
+  "maxrel": 1.2135519534544618e-06,
+  "warn": 0,
+  "got": {
+   "mc": 4.734694254195566,
+   "H_ho": 439620.7607366842
+  },
+  "case": 9,
+  "unknowns": [
+   "H_ho",
+   "mc"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 7.1871829059999754,
+  "min_dT": 8.000111599944717,
+  "maxrel": 4.1421801034536576e-05,
+  "warn": 0,
+  "got": {
+   "H_ci": 254313.963133849,
+   "H_co": 480132.6397303799
+  },
+  "case": 10,
+  "unknowns": [
+   "H_ci",
+   "H_co"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 6.758723270000019,
+  "min_dT": 7.999993256284711,
+  "maxrel": 7.447615780513673e-05,
+  "warn": 0,
+  "got": {
+   "mh": 10.000744761578051,
+   "H_ci": 254307.67960519792
+  },
+  "case": 11,
+  "unknowns": [
+   "H_ci",
+   "mh"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 5.7644217719999915,
+  "min_dT": 7.999992961176815,
+  "maxrel": 7.444965228159608e-05,
+  "warn": 0,
+  "got": {
+   "mc": 4.7343475032313425,
+   "H_ci": 254307.68433889037
+  },
+  "case": 12,
+  "unknowns": [
+   "H_ci",
+   "mc"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 7.042585535999933,
+  "min_dT": 8.000092006753562,
+  "maxrel": 0.00010507813980211722,
+  "warn": 0,
+  "got": {
+   "mh": 9.998949218601979,
+   "H_co": 480119.445702653
+  },
+  "case": 13,
+  "unknowns": [
+   "H_co",
+   "mh"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 7.131427773000041,
+  "min_dT": 8.000092006753562,
+  "maxrel": 0.00010508918237791352,
+  "warn": 0,
+  "got": {
+   "mc": 4.735197565751805,
+   "H_co": 480119.445702653
+  },
+  "case": 14,
+  "unknowns": [
+   "H_co",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 8.168499994098966e-05,
+  "msg": "[E] Unsolvable 2-unknown combination {'mh', 'mc'}: mh and mc only ever appear as a fixed ratio, so there are infinitely many solutions (case 15).",
+  "case": 15,
+  "unknowns": [
+   "mh",
+   "mc"
+  ]
+ }
+]

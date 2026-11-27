@@ -27,7 +27,7 @@ properties.
 - **Sensitivity analysis**: single-parameter, multi-output and 2D contour
   sweeps, with CSV export
 - **Save / load** model state to JSON
-- **57 unit tests** (pytest)
+- **274 tests** (pytest)
 
 ---
 

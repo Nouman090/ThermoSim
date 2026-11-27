@@ -21,6 +21,10 @@ within the root-finder tolerance.
   succeeded only sometimes. The bracket is now clipped to the physical range of
   the hot inlet.
 
+### Added
+- `benchmark/`: the scripts and raw results behind the TESPy comparison and the
+  supplementary checks of the article.
+
 ### Tests
 - The case-to-test matrix now covers two and three unknowns for all three
   exchanger types (68 to 140 tests; 274 in the suite).

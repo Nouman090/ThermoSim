@@ -1,0 +1,250 @@
+[
+ {
+  "status": "refused",
+  "time": 0.0001243110000359593,
+  "msg": "[E] Unsolvable 3-unknown combination {'H_ci', 'H_ho', 'H_hi'}: every available anchor reduces it to an unsolvable 2-unknown case ({'H_hi': {'H_ci', 'H_ho'}}). No state po",
+  "case": 1,
+  "unknowns": [
+   "H_hi",
+   "H_ho",
+   "H_ci"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 4.928700002437836e-05,
+  "msg": "[E] No valid anchor exists for unknowns={'H_co', 'H_ho', 'H_hi'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalp",
+  "case": 2,
+  "unknowns": [
+   "H_hi",
+   "H_ho",
+   "H_co"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 0.00011188200005562976,
+  "msg": "[E] All 1 anchor(s) failed for unknowns={'mh', 'H_ho', 'H_hi'}. Last error: [E] Cannot apply the H_co \u2192 H_hi anchor: hot-outlet temperature is unknown. The PPT diagonal n",
+  "case": 3,
+  "unknowns": [
+   "H_hi",
+   "H_ho",
+   "mh"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 0.0004218330000185233,
+  "msg": "[E] All 1 anchor(s) failed for unknowns={'mc', 'H_ho', 'H_hi'}. Last error: [E] Cannot apply the H_co \u2192 H_hi anchor: hot-outlet temperature is unknown. The PPT diagonal n",
+  "case": 4,
+  "unknowns": [
+   "H_hi",
+   "H_ho",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 0.000494806000006065,
+  "msg": "[E] No valid anchor exists for unknowns={'H_ci', 'H_co', 'H_hi'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalp",
+  "case": 5,
+  "unknowns": [
+   "H_hi",
+   "H_ci",
+   "H_co"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 117.456947517,
+  "msg": "[E] All 1 anchor(s) failed for unknowns={'H_ci', 'mh', 'H_hi'}. Last error: robust_solver: no root found in [80675.8, 553643]. Best residual = 3.51214 K at x = 80676.",
+  "case": 6,
+  "unknowns": [
+   "H_hi",
+   "H_ci",
+   "mh"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 91.46542554299992,
+  "msg": "[E] All 1 anchor(s) failed for unknowns={'H_ci', 'mc', 'H_hi'}. Last error: robust_solver: no root found in [80675.8, 480143]. Best residual = 3.51214 K at x = 80675.9.",
+  "case": 7,
+  "unknowns": [
+   "H_hi",
+   "H_ci",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 7.274600000073406e-05,
+  "msg": "[E] No valid anchor exists for unknowns={'H_co', 'mh', 'H_hi'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy ",
+  "case": 8,
+  "unknowns": [
+   "H_hi",
+   "H_co",
+   "mh"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 4.4331000026431866e-05,
+  "msg": "[E] No valid anchor exists for unknowns={'H_co', 'mc', 'H_hi'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy ",
+  "case": 9,
+  "unknowns": [
+   "H_hi",
+   "H_co",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 4.930200009312102e-05,
+  "msg": "[E] Unsolvable 3-unknown combination {'mc', 'mh', 'H_hi'}: every available anchor reduces it to an unsolvable 2-unknown case ({'H_hi': {'mh', 'mc'}}). No state points wer",
+  "case": 10,
+  "unknowns": [
+   "H_hi",
+   "mh",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 4.073700006301806e-05,
+  "msg": "[E] Unsolvable 3-unknown combination {'H_ci', 'H_ho', 'H_co'}: every available anchor reduces it to an unsolvable 2-unknown case ({'H_co': {'H_ci', 'H_ho'}}). No state po",
+  "case": 11,
+  "unknowns": [
+   "H_ho",
+   "H_ci",
+   "H_co"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 3.39429999485219e-05,
+  "msg": "[E] No valid anchor exists for unknowns={'H_ci', 'mh', 'H_ho'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy ",
+  "case": 12,
+  "unknowns": [
+   "H_ho",
+   "H_ci",
+   "mh"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 2.9530000006161572e-05,
+  "msg": "[E] No valid anchor exists for unknowns={'H_ci', 'H_ho', 'mc'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy ",
+  "case": 13,
+  "unknowns": [
+   "H_ho",
+   "H_ci",
+   "mc"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 4.410585276000006,
+  "min_dT": 7.999951276777381,
+  "maxrel": 0.1458366615490833,
+  "warn": 0,
+  "got": {
+   "H_co": 498689.3407117244,
+   "mh": 11.458366615490833,
+   "H_ho": 445565.25187904283
+  },
+  "case": 14,
+  "unknowns": [
+   "H_ho",
+   "H_co",
+   "mh"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 6.5023579549999795,
+  "min_dT": 7.999904310050226,
+  "maxrel": 0.12727237995147833,
+  "warn": 0,
+  "got": {
+   "H_co": 498689.3407117244,
+   "H_ho": 445564.91840333736,
+   "mc": 4.132103462643736
+  },
+  "case": 15,
+  "unknowns": [
+   "H_ho",
+   "H_co",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 6.461800001034135e-05,
+  "msg": "[E] No valid anchor exists for unknowns={'mh', 'H_ho', 'mc'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy th",
+  "case": 16,
+  "unknowns": [
+   "H_ho",
+   "mh",
+   "mc"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 6.474366192000048,
+  "min_dT": 7.999722829891823,
+  "maxrel": 0.14581825549279195,
+  "warn": 0,
+  "got": {
+   "H_ci": 239942.17863619645,
+   "mh": 11.45818255492792,
+   "H_co": 498689.3407117244
+  },
+  "case": 17,
+  "unknowns": [
+   "H_ci",
+   "H_co",
+   "mh"
+  ]
+ },
+ {
+  "status": "solved",
+  "time": 5.967736445000014,
+  "min_dT": 7.9999999976205345,
+  "maxrel": 0.1272835515045924,
+  "warn": 0,
+  "got": {
+   "H_ci": 239935.5645157448,
+   "mc": 4.132050568691207,
+   "H_co": 498689.3407117244
+  },
+  "case": 18,
+  "unknowns": [
+   "H_ci",
+   "H_co",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 6.462099997861515e-05,
+  "msg": "[E] No valid anchor exists for unknowns={'H_ci', 'mh', 'mc'} with HEX_type='Evaporator'. This combination is unsolvable: the PPT diagonal rule needs one known enthalpy th",
+  "case": 19,
+  "unknowns": [
+   "H_ci",
+   "mh",
+   "mc"
+  ]
+ },
+ {
+  "status": "refused",
+  "time": 5.0316000056227494e-05,
+  "msg": "[E] Unsolvable 3-unknown combination {'H_co', 'mh', 'mc'}: every available anchor reduces it to an unsolvable 2-unknown case ({'H_co': {'mh', 'mc'}}). No state points wer",
+  "case": 20,
+  "unknowns": [
+   "H_co",
+   "mh",
+   "mc"
+  ]
+ }
+]
