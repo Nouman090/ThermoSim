@@ -2,9 +2,10 @@
 # Changelog
 ## [3.5.1] - Unreleased
 
-Two heat-exchanger solver fixes. Results for the `Evaporator` and `Condenser`
-types that solved in 3.5.0 are unchanged: the validation scripts, the CGAM
-benchmark and `examples/geothermal_orc.py` give identical output.
+Two heat-exchanger solver fixes. The validation scripts, the CGAM benchmark and
+`examples/geothermal_orc.py` give output identical to 3.5.0. A `{H_hi, H_ci}`
+solve now searches a narrower bracket, so its result can differ from 3.5.0
+within the root-finder tolerance.
 
 ### Fixed
 - **`double_pipe` with three unknowns kept a design below the approach.** It
