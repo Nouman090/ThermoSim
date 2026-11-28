@@ -1,6 +1,6 @@
 
 # Changelog
-## [3.5.1] - Unreleased
+## [3.5.1] - 2026-11-28
 
 Two heat-exchanger solver fixes. The validation scripts, the CGAM benchmark and
 `examples/geothermal_orc.py` give output identical to 3.5.0. A `{H_hi, H_ci}`
